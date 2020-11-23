@@ -13,6 +13,7 @@ from src.utils import ImageTransform, seed_everything
 
 @hydra.main('config.yml')
 def main(cfg: DictConfig):
+    print('Cassava Leaf Disease Classification')
     cur_dir = hydra.utils.get_original_cwd()
     os.chdir(cur_dir)
     # Config  -------------------------------------------------------------------
