@@ -1,0 +1,13 @@
+pytorch_lightning
+hydra_core
+albumentations
+efficientnet_pytorch
+comet_ml
+pandas
+scipy
+matplotlib
+seaborn
+scikit-learn
+jupyter
+jupyterlab
+opencv-python
