@@ -1,5 +1,10 @@
+import os
+import itertools
+import pandas as pd
+
+import torch
 from torch import nn, optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_lightning as pl
 from pytorch_lightning import metrics
@@ -37,20 +42,23 @@ class CassavaDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
                           batch_size=self.cfg.train.batch_size,
-                          pin_memory=False,
+                          pin_memory=True,
+                          num_workers=self.cfg.train.num_workers,
                           shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset,
                           batch_size=self.cfg.train.batch_size,
-                          pin_memory=False,
+                          pin_memory=True,
+                          num_workers=self.cfg.train.num_workers,
                           shuffle=False)
 
     def test_dataloader(self):
         batch_size = min(len(self.test_dataset), self.cfg.train.batch_size)
         return DataLoader(self.test_dataset,
                           batch_size=batch_size,
-                          pin_memory=False,
+                          pin_memory=True,
+                          num_workers=self.cfg.train.num_workers,
                           shuffle=False)
 
 
@@ -119,7 +127,7 @@ class CassavaLightningSystem(pl.LightningModule):
         if self.best_loss > avg_loss:
             self.best_loss = avg_loss.item()
             self.best_acc = acc.item()
-            expname = self.cfg.exp['exp_name']
+            expname = self.cfg.data.exp_name
             filename = f'{expname}_epoch_{self.epoch_num}_loss_{self.best_loss:.3f}_acc_{self.best_acc:.3f}.pth'
             torch.save(self.net.state_dict(), filename)
             if self.experiment is not None:

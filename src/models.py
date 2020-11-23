@@ -1,4 +1,3 @@
-import torch
 from torch import nn
 from efficientnet_pytorch.model import EfficientNet
 

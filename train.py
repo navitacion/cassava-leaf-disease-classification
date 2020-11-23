@@ -16,7 +16,7 @@ def main(cfg: DictConfig):
     cur_dir = hydra.utils.get_original_cwd()
     os.chdir(cur_dir)
     # Config  -------------------------------------------------------------------
-    data_dir = './data/'
+    data_dir = './input'
     checkpoint_path = './checkpoints'
 
     seed_everything(cfg.data.seed)
@@ -25,6 +25,10 @@ def main(cfg: DictConfig):
     experiment = Experiment(api_key=cfg.comet_ml.api_key,
                             project_name=cfg.comet_ml.project_name)
 
+    # Log Parameters
+    experiment.log_parameters(dict(cfg.data))
+    experiment.log_parameters(dict(cfg.train))
+
 
     # Data Module  ---------------------------------------------------------------
     transform = ImageTransform(img_size=cfg.data.img_size)
@@ -32,6 +36,8 @@ def main(cfg: DictConfig):
     dm = CassavaDataModule(data_dir, cfg, transform, cv)
 
     net = enet(model_type=cfg.train.model_type)
+    # Log Model Graph
+    experiment.set_model_graph(str(net))
 
     model = CassavaLightningSystem(net, cfg, experiment)
 

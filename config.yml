@@ -7,6 +7,7 @@ comet_ml:
   project_name: cassava-leaf-disease-classification
 
 data:
+  exp_name: test
   seed: 42
   img_size: 256
   n_splits: 5
@@ -15,4 +16,6 @@ train:
   lr: 0.005
   epoch: 10
   fold: 0
+  batch_size: 32
+  num_workers: 2
   model_type: efficientnet-b0
