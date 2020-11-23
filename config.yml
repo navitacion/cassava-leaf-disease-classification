@@ -1,0 +1,18 @@
+hydra:
+  run:
+    dir: hydra_output/
+
+comet_ml:
+  api_key: LSTIie51umcysQtnef1Zzil6V
+  project_name: cassava-leaf-disease-classification
+
+data:
+  seed: 42
+  img_size: 256
+  n_splits: 5
+
+train:
+  lr: 0.005
+  epoch: 10
+  fold: 0
+  model_type: efficientnet-b0
