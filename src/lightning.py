@@ -19,7 +19,6 @@ class CassavaDataModule(pl.LightningDataModule):
         self.transform = transform
         self.cv = cv
 
-
     def prepare_data(self):
         # Prepare Data
         self.df = pd.read_csv(os.path.join(self.data_dir, 'train.csv'))
@@ -37,7 +36,6 @@ class CassavaDataModule(pl.LightningDataModule):
         # Dataset
         self.train_dataset = CassavaDataset(self.data_dir, self.transform, phase='train', df=train)
         self.val_dataset = CassavaDataset(self.data_dir, self.transform, phase='val', df=val)
-        self.test_dataset = CassavaDataset(self.data_dir, self.transform, phase='test', df=None)
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
@@ -53,32 +51,26 @@ class CassavaDataModule(pl.LightningDataModule):
                           num_workers=self.cfg.train.num_workers,
                           shuffle=False)
 
-    def test_dataloader(self):
-        batch_size = min(len(self.test_dataset), self.cfg.train.batch_size)
-        return DataLoader(self.test_dataset,
-                          batch_size=batch_size,
-                          pin_memory=True,
-                          num_workers=self.cfg.train.num_workers,
-                          shuffle=False)
-
 
 class CassavaLightningSystem(pl.LightningModule):
-    def __init__(self, net, cfg, experiment=None):
+    def __init__(self, net, cfg, optimizer, scheduler=None, experiment=None):
         super(CassavaLightningSystem, self).__init__()
         self.net = net
         self.cfg = cfg
         self.experiment = experiment
         self.criterion = nn.CrossEntropyLoss()
+        self.optimizer = optimizer
+        self.scheduler = scheduler
         self.best_loss = 1e+9
         self.best_acc = None
         self.epoch_num = 0
         self.acc_fn = metrics.Accuracy()
 
     def configure_optimizers(self):
-        self.optimizer = optim.AdamW(self.parameters(), lr=self.cfg.train.lr, weight_decay=2e-5)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=self.cfg.train.epoch, eta_min=0)
-
-        return [self.optimizer], [self.scheduler]
+        if self.scheduler is None:
+            return [self.optimizer], []
+        else:
+            return [self.optimizer], [self.scheduler]
 
     def forward(self, x):
         return self.net(x)
@@ -93,18 +85,10 @@ class CassavaLightningSystem(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss, label, logits = self.step(batch)
 
-        if self.experiment is not None:
-            logs = {'train/loss': loss.item()}
-            self.experiment.log_metrics(logs, step=batch_idx)
-
         return {'loss': loss, 'logits': logits, 'labels': label}
 
     def validation_step(self, batch, batch_idx):
         loss, label, logits = self.step(batch)
-
-        if self.experiment is not None:
-            val_logs = {'val/loss': loss.item()}
-            self.experiment.log_metrics(val_logs, step=batch_idx)
 
         return {'val_loss': loss, 'logits': logits, 'labels': label}
 
@@ -116,10 +100,8 @@ class CassavaLightningSystem(pl.LightningModule):
         # Accuracy
         acc = self.acc_fn(logits, labels.squeeze())
 
-        print(f'Epoch: {self.epoch_num}  Loss: {avg_loss.item():.4f}  Acc {acc.item():.4f}')
-
         if self.experiment is not None:
-            logs = {'val/loss': avg_loss, 'val/acc': acc}
+            logs = {'val/loss': avg_loss.item(), 'val/acc': acc.item()}
             # Logging
             self.experiment.log_metrics(logs, epoch=self.epoch_num)
 
@@ -138,28 +120,3 @@ class CassavaLightningSystem(pl.LightningModule):
         self.epoch_num += 1
 
         return {'avg_val_loss': avg_loss}
-
-    def test_step(self, batch, batch_idx):
-        inp, img_id = batch
-        out = self.forward(inp)
-        logits = torch.sigmoid(out)
-
-        return {'preds': logits, 'image_id': img_id}
-
-    def test_epoch_end(self, outputs):
-        preds = torch.cat([x['preds'] for x in outputs])
-        _, preds = torch.max(preds, 1)
-
-        preds = preds.detach().cpu().numpy()
-        # [tuple, tuple]
-        img_ids = [x['image_id'] for x in outputs]
-        # [list, list]
-        img_ids = [list(x) for x in img_ids]
-        img_ids = list(itertools.chain.from_iterable(img_ids))
-
-        self.sub = pd.DataFrame({
-            'image_id': img_ids,
-            'label': preds
-        })
-
-        return None

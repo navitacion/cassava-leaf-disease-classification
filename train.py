@@ -3,12 +3,42 @@ import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
 from sklearn.model_selection import StratifiedKFold
+from torch import optim
+from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
+import albumentations as albu
+from albumentations.pytorch import ToTensorV2
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.models import enet
-from src.utils import ImageTransform, seed_everything
+from src.utils import seed_everything
+
+
+
+class ImageTransform:
+    def __init__(self, img_size=224, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+        self.transform = {
+            'train': albu.Compose([
+                albu.Resize(img_size, img_size),
+                albu.HorizontalFlip(p=0.5),
+                albu.VerticalFlip(p=0.5),
+                albu.Normalize(mean, std),
+                ToTensorV2(),
+            ], p=1.0),
+
+            'val': albu.Compose([
+                albu.Resize(img_size, img_size),
+                albu.Normalize(mean, std),
+                ToTensorV2(),
+            ], p=1.0)
+        }
+
+    def __call__(self, img, phase='train'):
+        augmented = self.transform[phase](image=img)
+        augmented = augmented['image']
+
+        return augmented
 
 
 @hydra.main('config.yml')
@@ -40,7 +70,10 @@ def main(cfg: DictConfig):
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
-    model = CassavaLightningSystem(net, cfg, experiment)
+    optimizer = optim.Adam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    scheduler = None
+
+    model = CassavaLightningSystem(net, cfg, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
 
     checkpoint_callback = ModelCheckpoint(
         filepath=checkpoint_path,
@@ -48,12 +81,13 @@ def main(cfg: DictConfig):
         monitor='avg_val_loss',
         verbose=False,
         mode='min',
+        prefix=cfg.data.exp_name + '_'
     )
 
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',
         min_delta=0.00,
-        patience=3,
+        patience=5,
         verbose=False,
         mode='min'
     )
@@ -63,7 +97,7 @@ def main(cfg: DictConfig):
         max_epochs=cfg.train.epoch,
         gpus=1,
         callbacks=[checkpoint_callback, early_stop_callback],
-        num_sanity_val_steps=0,  # Skip Sanity Check
+        # num_sanity_val_steps=0,  # Skip Sanity Check
     )
 
     # Train

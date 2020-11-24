@@ -1,3 +1,4 @@
 input/*
 .idea/*
 hydra_output/*
+checkpoints/*
