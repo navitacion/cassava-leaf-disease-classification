@@ -2,3 +2,4 @@ input/*
 .idea/*
 hydra_output/*
 checkpoints/*
+*/__pycache__/*
