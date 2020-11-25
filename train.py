@@ -66,7 +66,7 @@ def main(cfg: DictConfig):
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
     dm = CassavaDataModule(data_dir, cfg, transform, cv)
 
-    net = enet(model_type=cfg.train.model_type)
+    net = enet(model_type=cfg.train.model_type, pretrained=True)
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
@@ -87,7 +87,7 @@ def main(cfg: DictConfig):
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',
         min_delta=0.00,
-        patience=5,
+        patience=10,
         verbose=False,
         mode='min'
     )

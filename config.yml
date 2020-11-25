@@ -13,10 +13,10 @@ data:
   n_splits: 5
 
 train:
-  lr: 0.0001
+  lr: 0.00001
   epoch: 1000
   fold: 0
-  batch_size: 32
-  num_workers: 2
+  batch_size: 64
+  num_workers: 1
   weight_decay: 1e-5
   model_type: efficientnet-b0
