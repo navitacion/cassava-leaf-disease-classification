@@ -1,18 +1,31 @@
 import os
-import itertools
 import pandas as pd
 
 import torch
-from torch import nn, optim
+from torch import nn
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
 import pytorch_lightning as pl
 from pytorch_lightning import metrics
 
 from .utils import CassavaDataset
 
 class CassavaDataModule(pl.LightningDataModule):
+    """
+    DataModule for Cassava Competition
+    """
     def __init__(self, data_dir, cfg, transform, cv):
+        """
+        ------------------------------------
+        Parameters
+        data_dir: str
+            Directory Path of Data
+        cfg: DictConfig
+            Config
+        transform: albumentations.transform
+            Data Augumentations
+        cv: sklearn.model_selection
+            Cross Validation
+        """
         super(CassavaDataModule, self).__init__()
         self.data_dir = data_dir
         self.cfg = cfg
@@ -54,6 +67,20 @@ class CassavaDataModule(pl.LightningDataModule):
 
 class CassavaLightningSystem(pl.LightningModule):
     def __init__(self, net, cfg, optimizer, scheduler=None, experiment=None):
+        """
+        ------------------------------------
+        Parameters
+        net: torch.nn.Module
+            Model
+        cfg: DictConfig
+            Config
+        optimizer: torch.optim
+            Optimizer
+        scheduler: torch.optim.lr_scheduler
+            Learning Rate Scheduler
+        experiment: comet_ml.experiment
+            Logger(Comet_ML)
+        """
         super(CassavaLightningSystem, self).__init__()
         self.net = net
         self.cfg = cfg
@@ -109,6 +136,9 @@ class CassavaLightningSystem(pl.LightningModule):
         if self.best_loss > avg_loss:
             self.best_loss = avg_loss.item()
             self.best_acc = acc.item()
+            logs = {'val/best_loss': self.best_loss, 'val/best_acc': self.best_acc}
+            self.experiment.log_parameters(logs)
+
             expname = self.cfg.data.exp_name
             filename = f'{expname}_epoch_{self.epoch_num}_loss_{self.best_loss:.3f}_acc_{self.best_acc:.3f}.pth'
             torch.save(self.net.state_dict(), filename)

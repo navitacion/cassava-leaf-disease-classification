@@ -4,7 +4,7 @@ from omegaconf import DictConfig
 from comet_ml import Experiment
 from sklearn.model_selection import StratifiedKFold
 from torch import optim
-from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
+from torch.optim import lr_scheduler
 import albumentations as albu
 from albumentations.pytorch import ToTensorV2
 from pytorch_lightning import Trainer
@@ -15,14 +15,24 @@ from src.models import enet
 from src.utils import seed_everything
 
 
-
+# Image Augmentations
 class ImageTransform:
     def __init__(self, img_size=224, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self.transform = {
             'train': albu.Compose([
-                albu.Resize(img_size, img_size),
+                # albu.Resize(img_size, img_size),
+                albu.ColorJitter(p=0.5),
+                albu.RandomResizedCrop(img_size, img_size),
                 albu.HorizontalFlip(p=0.5),
                 albu.VerticalFlip(p=0.5),
+                albu.Transpose(p=0.5),
+                albu.ShiftScaleRotate(p=0.5),
+                albu.OneOf([
+                    albu.Blur(p=1.0),
+                albu.GaussianBlur(p=1.0)
+                ], p=0.5),
+                # albu.RandomShadow(p=0.5),
+                # albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
                 albu.Normalize(mean, std),
                 ToTensorV2(),
             ], p=1.0),
@@ -49,7 +59,6 @@ def main(cfg: DictConfig):
     # Config  -------------------------------------------------------------------
     data_dir = './input'
     checkpoint_path = './checkpoints'
-
     seed_everything(cfg.data.seed)
 
     # Comet_ml
@@ -60,21 +69,24 @@ def main(cfg: DictConfig):
     experiment.log_parameters(dict(cfg.data))
     experiment.log_parameters(dict(cfg.train))
 
-
     # Data Module  ---------------------------------------------------------------
     transform = ImageTransform(img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
     dm = CassavaDataModule(data_dir, cfg, transform, cv)
 
+    # Model  ----------------------------------------------------------------------
     net = enet(model_type=cfg.train.model_type, pretrained=True)
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
+    # Optimizer, Scheduler  --------------------------------------------------------
     optimizer = optim.Adam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
-    scheduler = None
+    scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, total_steps=cfg.train.epoch)
 
+    # Lightning Module  -------------------------------------------------------------
     model = CassavaLightningSystem(net, cfg, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
 
+    # Callbacks  --------------------------------------------------------------------
     checkpoint_callback = ModelCheckpoint(
         filepath=checkpoint_path,
         save_top_k=1,
@@ -87,16 +99,19 @@ def main(cfg: DictConfig):
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',
         min_delta=0.00,
-        patience=10,
+        patience=15,
         verbose=False,
         mode='min'
     )
 
+    # Trainer  -------------------------------------------------------------------------
     trainer = Trainer(
         logger=False,
         max_epochs=cfg.train.epoch,
         gpus=1,
         callbacks=[checkpoint_callback, early_stop_callback],
+        amp_backend='apex',
+        amp_level='O2',
         # num_sanity_val_steps=0,  # Skip Sanity Check
     )
 

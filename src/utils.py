@@ -34,13 +34,9 @@ class CassavaDataset(Dataset):
             return len(self.df)
 
     def __getitem__(self, idx):
-
-        if self.phase == 'test':
-            target_img_path = self.img_path[idx]
-        else:
-            row = self.df.iloc[idx]
-            target_img_id = row['image_id']
-            target_img_path = os.path.join(self.data_dir, 'train_images', f'{target_img_id}')
+        row = self.df.iloc[idx]
+        target_img_id = row['image_id']
+        target_img_path = os.path.join(self.data_dir, 'train_images', f'{target_img_id}')
 
         img = cv2.imread(target_img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
