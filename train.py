@@ -31,7 +31,7 @@ class ImageTransform:
                     albu.Blur(p=1.0),
                 albu.GaussianBlur(p=1.0)
                 ], p=0.5),
-                # albu.RandomShadow(p=0.5),
+                albu.RandomShadow(p=0.5),
                 # albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
                 albu.Normalize(mean, std),
                 ToTensorV2(),
