@@ -1,4 +1,5 @@
 import os
+import cv2
 import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
@@ -20,9 +21,11 @@ class ImageTransform:
     def __init__(self, img_size=224, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
         self.transform = {
             'train': albu.Compose([
-                # albu.Resize(img_size, img_size),
+                albu.RandomShadow(p=0.5),
+                # albu.Resize(img_size*2, img_size*2, interpolation=cv2.INTER_AREA),
+                albu.RandomResizedCrop(img_size, img_size, interpolation=cv2.INTER_AREA),
                 albu.ColorJitter(p=0.5),
-                albu.RandomResizedCrop(img_size, img_size),
+                albu.CLAHE(p=0.5),
                 albu.HorizontalFlip(p=0.5),
                 albu.VerticalFlip(p=0.5),
                 albu.Transpose(p=0.5),
@@ -31,14 +34,13 @@ class ImageTransform:
                     albu.Blur(p=1.0),
                 albu.GaussianBlur(p=1.0)
                 ], p=0.5),
-                albu.RandomShadow(p=0.5),
-                # albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
+                albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
                 albu.Normalize(mean, std),
                 ToTensorV2(),
             ], p=1.0),
 
             'val': albu.Compose([
-                albu.Resize(img_size, img_size),
+                albu.Resize(img_size, img_size, interpolation=cv2.INTER_AREA),
                 albu.Normalize(mean, std),
                 ToTensorV2(),
             ], p=1.0)
