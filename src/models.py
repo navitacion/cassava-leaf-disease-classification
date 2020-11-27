@@ -6,7 +6,9 @@ from efficientnet_pytorch.model import EfficientNet
 model_default_weight = {
     'efficientnet-b0': './enet_weight/efficientnet-b0-08094119.pth',
     'efficientnet-b1': './enet_weight/efficientnet-b1-dbc7070a.pth',
-    'efficientnet-b2': './enet_weight/efficientnet-b2-27687264.pth'
+    'efficientnet-b2': './enet_weight/efficientnet-b2-27687264.pth',
+    'efficientnet-b3': './enet_weight/efficientnet-b3-c8376fa2.pth',
+    'efficientnet-b4': './enet_weight/efficientnet-b4-e116e8b3.pth',
 }
 
 class enet(nn.Module):

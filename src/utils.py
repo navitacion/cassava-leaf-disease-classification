@@ -1,10 +1,12 @@
 import os
 import cv2
 import glob
+import math
 import numpy as np
 import random
 import torch
 from torch.utils.data import Dataset
+from torch.optim.lr_scheduler import _LRScheduler
 import albumentations as albu
 from albumentations.pytorch import ToTensorV2
 
@@ -17,29 +19,6 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
-
-
-def add_random_shadow(image):
-    top_y = 320*np.random.uniform()
-    top_x = 0
-    bot_x = 160
-    bot_y = 320 * np.random.uniform()
-    image_hls = cv2.cvtColor(image,cv2.COLOR_RGB2HLS)
-    shadow_mask = 0 * image_hls[:,:,1]
-    X_m = np.mgrid[0:image.shape[0], 0:image.shape[1]][0]
-    Y_m = np.mgrid[0:image.shape[0], 0:image.shape[1]][1]
-    shadow_mask[((X_m - top_x) * (bot_y - top_y) - (bot_x - top_x)*(Y_m - top_y) >=0)] = 1
-    #random_bright = .25+.7*np.random.uniform()
-    if np.random.randint(2)==1:
-        random_bright = .5
-        cond1 = shadow_mask==1
-        cond0 = shadow_mask==0
-        if np.random.randint(2)==1:
-            image_hls[:,:,1][cond1] = image_hls[:,:,1][cond1]*random_bright
-        else:
-            image_hls[:,:,1][cond0] = image_hls[:,:,1][cond0]*random_bright
-    image = cv2.cvtColor(image_hls,cv2.COLOR_HLS2RGB)
-    return image
 
 
 class CassavaDataset(Dataset):
@@ -75,3 +54,65 @@ class CassavaDataset(Dataset):
         label = torch.tensor(label, dtype=torch.long)
 
         return img, label
+
+
+class CosineAnnealingWarmUpRestarts(_LRScheduler):
+    """
+    CosineAnnealingRestarts add Warmup
+    Reference: https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup/blob/master/cosine_annearing_with_warmup.py
+
+    """
+    def __init__(self, optimizer, T_0, T_mult=1, eta_max=0.1, T_up=0, gamma=1., last_epoch=-1):
+        if T_0 <= 0 or not isinstance(T_0, int):
+            raise ValueError("Expected positive integer T_0, but got {}".format(T_0))
+        if T_mult < 1 or not isinstance(T_mult, int):
+            raise ValueError("Expected integer T_mult >= 1, but got {}".format(T_mult))
+        if T_up < 0 or not isinstance(T_up, int):
+            raise ValueError("Expected positive integer T_up, but got {}".format(T_up))
+        self.T_0 = T_0
+        self.T_mult = T_mult
+        self.base_eta_max = eta_max
+        self.eta_max = eta_max
+        self.T_up = T_up
+        self.T_i = T_0
+        self.gamma = gamma
+        self.cycle = 0
+        self.T_cur = last_epoch
+        super(CosineAnnealingWarmUpRestarts, self).__init__(optimizer, last_epoch)
+        # self.T_cur = last_epoch
+
+    def get_lr(self):
+        if self.T_cur == -1:
+            return self.base_lrs
+        elif self.T_cur < self.T_up:
+            return [(self.eta_max - base_lr)*self.T_cur / self.T_up + base_lr for base_lr in self.base_lrs]
+        else:
+            return [base_lr + (self.eta_max - base_lr) * (1 + math.cos(math.pi * (self.T_cur-self.T_up) / (self.T_i - self.T_up))) / 2
+                    for base_lr in self.base_lrs]
+
+    def step(self, epoch=None):
+        if epoch is None:
+            epoch = self.last_epoch + 1
+            self.T_cur = self.T_cur + 1
+            if self.T_cur >= self.T_i:
+                self.cycle += 1
+                self.T_cur = self.T_cur - self.T_i
+                self.T_i = (self.T_i - self.T_up) * self.T_mult + self.T_up
+        else:
+            if epoch >= self.T_0:
+                if self.T_mult == 1:
+                    self.T_cur = epoch % self.T_0
+                    self.cycle = epoch // self.T_0
+                else:
+                    n = int(math.log((epoch / self.T_0 * (self.T_mult - 1) + 1), self.T_mult))
+                    self.cycle = n
+                    self.T_cur = epoch - self.T_0 * (self.T_mult ** n - 1) / (self.T_mult - 1)
+                    self.T_i = self.T_0 * self.T_mult ** (n)
+            else:
+                self.T_i = self.T_0
+                self.T_cur = epoch
+
+        self.eta_max = self.base_eta_max * (self.gamma**self.cycle)
+        self.last_epoch = math.floor(epoch)
+        for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
+            param_group['lr'] = lr

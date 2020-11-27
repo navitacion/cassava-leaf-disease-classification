@@ -4,3 +4,4 @@ hydra_output/*
 checkpoints/*
 */__pycache__/*
 enet_weight/*
+multirun/*

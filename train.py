@@ -13,7 +13,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.models import enet
-from src.utils import seed_everything
+from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 
 
 # Image Augmentations
@@ -83,7 +83,8 @@ def main(cfg: DictConfig):
 
     # Optimizer, Scheduler  --------------------------------------------------------
     optimizer = optim.Adam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
-    scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, total_steps=cfg.train.epoch)
+    # scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, total_steps=cfg.train.epoch)
+    scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=10, eta_max=cfg.train.lr * 10)
 
     # Lightning Module  -------------------------------------------------------------
     model = CassavaLightningSystem(net, cfg, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
@@ -113,7 +114,7 @@ def main(cfg: DictConfig):
         gpus=1,
         callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
-        amp_level='O2',
+        amp_level='O1',
         # num_sanity_val_steps=0,  # Skip Sanity Check
     )
 
