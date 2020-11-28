@@ -12,7 +12,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
-from src.models import enet
+from src.models import enet, Resnext, Resnet
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 
 
@@ -77,14 +77,21 @@ def main(cfg: DictConfig):
     dm = CassavaDataModule(data_dir, cfg, transform, cv)
 
     # Model  ----------------------------------------------------------------------
-    net = enet(model_type=cfg.train.model_type, pretrained=True)
+    if 'efficientnet' in cfg.train.model_type:
+        net = enet(model_type=cfg.train.model_type, pretrained=True)
+    elif 'resnext' in cfg.train.model_type:
+        net = Resnext(model_type=cfg.train.model_type)
+    elif 'resnet' in cfg.train.model_type:
+        net = Resnet(model_type=cfg.train.model_type)
+    else:
+        net = None
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
     # Optimizer, Scheduler  --------------------------------------------------------
     optimizer = optim.Adam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     # scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, total_steps=cfg.train.epoch)
-    scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=10, eta_max=cfg.train.lr * 10)
+    scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
 
     # Lightning Module  -------------------------------------------------------------
     model = CassavaLightningSystem(net, cfg, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
@@ -114,7 +121,7 @@ def main(cfg: DictConfig):
         gpus=1,
         callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
-        amp_level='O1',
+        amp_level='O2',
         # num_sanity_val_steps=0,  # Skip Sanity Check
     )
 

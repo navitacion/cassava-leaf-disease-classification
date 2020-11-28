@@ -11,4 +11,3 @@ scikit-learn
 jupyter
 jupyterlab
 opencv-python
-timm

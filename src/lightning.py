@@ -140,7 +140,7 @@ class CassavaLightningSystem(pl.LightningModule):
             self.experiment.log_parameters(logs)
 
             expname = self.cfg.data.exp_name
-            filename = f'{expname}_epoch_{self.epoch_num}_loss_{self.best_loss:.3f}_acc_{self.best_acc:.3f}.pth'
+            filename = f'{expname}_fold_{self.cfg.train.fold}_epoch_{self.epoch_num}_loss_{self.best_loss:.3f}_acc_{self.best_acc:.3f}.pth'
             torch.save(self.net.state_dict(), filename)
             if self.experiment is not None:
                 self.experiment.log_model(name=filename, file_or_folder='./'+filename)
