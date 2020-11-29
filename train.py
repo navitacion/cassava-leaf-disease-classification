@@ -12,7 +12,7 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
-from src.models import enet, Resnext, Resnet
+from src.models import enet, Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 
 
@@ -77,21 +77,15 @@ def main(cfg: DictConfig):
     dm = CassavaDataModule(data_dir, cfg, transform, cv)
 
     # Model  ----------------------------------------------------------------------
-    if 'efficientnet' in cfg.train.model_type:
-        net = enet(model_type=cfg.train.model_type, pretrained=True)
-    elif 'resnext' in cfg.train.model_type:
-        net = Resnext(model_type=cfg.train.model_type)
-    elif 'resnet' in cfg.train.model_type:
-        net = Resnet(model_type=cfg.train.model_type)
-    else:
-        net = None
+    net = Timm_model(cfg.train.model_type, pretrained=True)
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
     # Optimizer, Scheduler  --------------------------------------------------------
-    optimizer = optim.Adam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    optimizer = optim.AdamW(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     # scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, total_steps=cfg.train.epoch)
     scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
+    # scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
 
     # Lightning Module  -------------------------------------------------------------
     model = CassavaLightningSystem(net, cfg, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
@@ -109,7 +103,7 @@ def main(cfg: DictConfig):
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',
         min_delta=0.00,
-        patience=15,
+        patience=20,
         verbose=False,
         mode='min'
     )
@@ -118,7 +112,7 @@ def main(cfg: DictConfig):
     trainer = Trainer(
         logger=False,
         max_epochs=cfg.train.epoch,
-        gpus=1,
+        # gpus=1,
         callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
         amp_level='O2',

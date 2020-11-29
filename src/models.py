@@ -3,6 +3,12 @@ from torch import nn
 from torchvision.models import resnext50_32x4d, resnext101_32x8d, resnet18, resnet34, resnet50
 from efficientnet_pytorch.model import EfficientNet
 
+# Pytorch Image Model
+# https://rwightman.github.io/pytorch-image-models/
+import timm
+from timm import create_model
+
+
 # Reference: https://www.kaggle.com/hmendonca/efficientnet-pytorch
 model_default_weight = {
     'efficientnet-b0': './enet_weight/efficientnet-b0-08094119.pth',
@@ -28,31 +34,38 @@ class enet(nn.Module):
         return out
 
 
-class Resnext(nn.Module):
-    def __init__(self, model_type='resnext50', pretrained=True, out_dim=5):
-        super(Resnext, self).__init__()
-        if model_type == 'resnext50':
-            self.base = resnext50_32x4d(pretrained=pretrained)
-        elif model_type == 'resnext101':
-            self.base = resnext101_32x8d(pretrained=pretrained)
-        self.base.fc = nn.Linear(in_features=self.base.fc.in_features, out_features=out_dim)
+class Timm_model(nn.Module):
+    def __init__(self, model_name, pretrained=True, out_dim=5):
+        super(Timm_model, self).__init__()
+        self.base = create_model(model_name, pretrained=pretrained)
+
+        if 'efficientnet' in model_name:
+            self.base.classifier = nn.Linear(in_features=self.base.classifier.in_features, out_features=out_dim)
+        elif 'vit' in model_name:
+            self.base.head = nn.Linear(in_features=self.base.head.in_features, out_features=out_dim)
+        else:
+            self.base.fc = nn.Linear(in_features=self.base.fc.in_features, out_features=out_dim)
 
     def forward(self, x):
-        x = self.base(x)
-        return x
+        return self.base(x)
 
 
-class Resnet(nn.Module):
-    def __init__(self, model_type='resnet18', pretrained=True, out_dim=5):
-        super(Resnet, self).__init__()
-        if model_type == 'resnet18':
-            self.base = resnet18(pretrained=pretrained)
-        elif model_type == 'resnet34':
-            self.base = resnet34(pretrained=pretrained)
-        elif model_type == 'resnet50':
-            self.base = resnet50(pretrained=pretrained)
-        self.base.fc = nn.Linear(in_features=self.base.fc.in_features, out_features=out_dim)
 
-    def forward(self, x):
-        x = self.base(x)
-        return x
+if __name__ == '__main__':
+    # Print Timm Models
+    model_names = timm.list_models(pretrained=True)
+    print(model_names)
+
+
+    # efficientnet - classifier
+
+    # resnest系 - fc
+
+    # ViT - head
+
+    model = create_model('vit_large_patch16_224')
+    print(model)
+
+    z = torch.randn(4, 3, 224, 224)
+    out = model(z)
+    print(out.size())
