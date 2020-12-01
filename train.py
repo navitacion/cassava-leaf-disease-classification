@@ -1,5 +1,6 @@
 import os
 import cv2
+import glob
 import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
@@ -22,7 +23,6 @@ class ImageTransform:
         self.transform = {
             'train': albu.Compose([
                 albu.RandomShadow(p=0.5),
-                # albu.Resize(img_size*2, img_size*2, interpolation=cv2.INTER_AREA),
                 albu.RandomResizedCrop(img_size, img_size, interpolation=cv2.INTER_AREA),
                 albu.ColorJitter(p=0.5),
                 albu.CLAHE(p=0.5),
@@ -75,6 +75,8 @@ def main(cfg: DictConfig):
     transform = ImageTransform(img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
     dm = CassavaDataModule(data_dir, cfg, transform, cv)
+    dm.prepare_data()
+    dm.setup()
 
     # Model  ----------------------------------------------------------------------
     net = Timm_model(cfg.train.model_type, pretrained=True)
@@ -83,8 +85,12 @@ def main(cfg: DictConfig):
 
     # Optimizer, Scheduler  --------------------------------------------------------
     optimizer = optim.AdamW(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
-    # scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, total_steps=cfg.train.epoch)
-    scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
+    if cfg.train.scheduler == 'onecycle':
+        steps_per_epoch = (len(glob.glob(os.path.join(data_dir, 'train_images', '*.jpg'))) // cfg.train.batch_size) + 1
+        scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, epochs=cfg.train.epoch, steps_per_epoch=steps_per_epoch)
+    elif cfg.train.scheduler == 'cosine':
+        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
+    # scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
     # scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
 
     # Lightning Module  -------------------------------------------------------------
@@ -112,7 +118,7 @@ def main(cfg: DictConfig):
     trainer = Trainer(
         logger=False,
         max_epochs=cfg.train.epoch,
-        # gpus=1,
+        gpus=-1,
         callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
         amp_level='O2',

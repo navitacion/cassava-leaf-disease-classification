@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torchvision.models import resnext50_32x4d, resnext101_32x8d, resnet18, resnet34, resnet50
 from efficientnet_pytorch.model import EfficientNet
 
 # Pytorch Image Model
@@ -55,17 +54,3 @@ if __name__ == '__main__':
     # Print Timm Models
     model_names = timm.list_models(pretrained=True)
     print(model_names)
-
-
-    # efficientnet - classifier
-
-    # resnest系 - fc
-
-    # ViT - head
-
-    model = create_model('vit_large_patch16_224')
-    print(model)
-
-    z = torch.randn(4, 3, 224, 224)
-    out = model(z)
-    print(out.size())

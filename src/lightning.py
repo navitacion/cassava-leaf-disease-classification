@@ -97,6 +97,15 @@ class CassavaLightningSystem(pl.LightningModule):
         if self.scheduler is None:
             return [self.optimizer], []
         else:
+            # OneCycleはstepごとに更新する
+            if self.cfg.train.scheduler == 'onecycle':
+                self.scheduler = {
+                        'scheduler': self.scheduler,
+                        'monitor': 'loss',
+                        'interval': 'step',
+                        'frequency': 1,
+                        'strict': True,
+                    }
             return [self.optimizer], [self.scheduler]
 
     def forward(self, x):
@@ -150,3 +159,17 @@ class CassavaLightningSystem(pl.LightningModule):
         self.epoch_num += 1
 
         return {'avg_val_loss': avg_loss}
+
+    # learning rate warm-up
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx,
+                       optimizer_closure, on_tpu, using_native_amp, using_lbfgs):
+        # warm up lr
+        if self.cfg.train.warmup_step > 0:
+            if self.trainer.global_step < self.cfg.train.warmup_step:
+                lr_scale = min(1., float(self.trainer.global_step + 1) / float(self.cfg.train.warmup_step))
+                for pg in optimizer.param_groups:
+                    pg['lr'] = lr_scale * self.cfg.train.lr
+
+        # update params
+        optimizer.step(closure=optimizer_closure)
+        optimizer.zero_grad()

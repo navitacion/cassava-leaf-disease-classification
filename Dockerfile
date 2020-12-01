@@ -13,6 +13,7 @@ RUN apt update && apt -y upgrade && apt install -y \
   git \
   libboost-dev \
   libboost-system-dev \
-  libboost-filesystem-dev
+  libboost-filesystem-dev \
+  libgl1-mesa-dev
 
 RUN pip install --upgrade pip && pip install -r requirements.txt
