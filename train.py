@@ -5,7 +5,7 @@ import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
 from sklearn.model_selection import StratifiedKFold
-from torch import optim
+from torch import optim, nn
 from torch.optim import lr_scheduler
 import albumentations as albu
 from albumentations.pytorch import ToTensorV2
@@ -13,8 +13,9 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
-from src.models import enet, Timm_model
+from src.models import Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
+from src.losses import FocalLoss
 
 
 # Image Augmentations
@@ -32,7 +33,7 @@ class ImageTransform:
                 albu.ShiftScaleRotate(p=0.5),
                 albu.OneOf([
                     albu.Blur(p=1.0),
-                albu.GaussianBlur(p=1.0)
+                    albu.GaussianBlur(p=1.0)
                 ], p=0.5),
                 albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
                 albu.Normalize(mean, std),
@@ -74,7 +75,7 @@ def main(cfg: DictConfig):
     # Data Module  ---------------------------------------------------------------
     transform = ImageTransform(img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
-    dm = CassavaDataModule(data_dir, cfg, transform, cv)
+    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=True)
     dm.prepare_data()
     dm.setup()
 
@@ -83,6 +84,13 @@ def main(cfg: DictConfig):
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
+    # Loss fn  ---------------------------------------------------------------------
+    # Cross Entropy Loss
+    criterion = nn.CrossEntropyLoss()
+    # Focal Loss
+    # criterion = FocalLoss()
+    
+
     # Optimizer, Scheduler  --------------------------------------------------------
     optimizer = optim.AdamW(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     if cfg.train.scheduler == 'onecycle':
@@ -90,11 +98,11 @@ def main(cfg: DictConfig):
         scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, epochs=cfg.train.epoch, steps_per_epoch=steps_per_epoch)
     elif cfg.train.scheduler == 'cosine':
         scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
-    # scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
-    # scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
+    elif cfg.train.scheduler == 'cosine-warmup':
+        scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
 
     # Lightning Module  -------------------------------------------------------------
-    model = CassavaLightningSystem(net, cfg, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
+    model = CassavaLightningSystem(net, cfg, criterion=criterion, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
 
     # Callbacks  --------------------------------------------------------------------
     checkpoint_callback = ModelCheckpoint(
@@ -109,7 +117,7 @@ def main(cfg: DictConfig):
     early_stop_callback = EarlyStopping(
         monitor='avg_val_loss',
         min_delta=0.00,
-        patience=20,
+        patience=100,
         verbose=False,
         mode='min'
     )

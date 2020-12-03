@@ -1,7 +1,6 @@
 pytorch_lightning
 hydra_core
 albumentations
-efficientnet_pytorch
 comet_ml
 pandas
 scipy

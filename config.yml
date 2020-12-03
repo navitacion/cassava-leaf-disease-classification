@@ -9,16 +9,16 @@ comet_ml:
 data:
   exp_name: test
   seed: 42
-  img_size: 256
+  img_size: 512
   n_splits: 5
 
 train:
-  lr: 2e-5
-  epoch: 50
+  lr: 1e-3
+  epoch: 100
   fold: 0
-  batch_size: 64
-  num_workers: 0
+  batch_size: 32
+  num_workers: 2
   weight_decay: 1e-5
   model_type: efficientnet_b0
   warmup_step: -1
-  scheduler: onecycle
+  scheduler: cosine

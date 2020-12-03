@@ -13,7 +13,7 @@ class CassavaDataModule(pl.LightningDataModule):
     """
     DataModule for Cassava Competition
     """
-    def __init__(self, data_dir, cfg, transform, cv):
+    def __init__(self, data_dir, cfg, transform, cv, use_merge=False):
         """
         ------------------------------------
         Parameters
@@ -31,11 +31,14 @@ class CassavaDataModule(pl.LightningDataModule):
         self.cfg = cfg
         self.transform = transform
         self.cv = cv
+        self.use_merge = use_merge
 
     def prepare_data(self):
         # Prepare Data
-        self.df = pd.read_csv(os.path.join(self.data_dir, 'train.csv'))
-
+        if self.use_merge:
+            self.df = pd.read_csv(os.path.join(self.data_dir, 'merged.csv'))
+        else:
+            self.df = pd.read_csv(os.path.join(self.data_dir, 'train.csv'))
 
     def setup(self, stage=None):
         # Validation
@@ -66,7 +69,7 @@ class CassavaDataModule(pl.LightningDataModule):
 
 
 class CassavaLightningSystem(pl.LightningModule):
-    def __init__(self, net, cfg, optimizer, scheduler=None, experiment=None):
+    def __init__(self, net, cfg, criterion, optimizer, scheduler=None, experiment=None):
         """
         ------------------------------------
         Parameters
@@ -85,7 +88,7 @@ class CassavaLightningSystem(pl.LightningModule):
         self.net = net
         self.cfg = cfg
         self.experiment = experiment
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.best_loss = 1e+9
