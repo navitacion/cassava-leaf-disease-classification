@@ -4,9 +4,11 @@ import glob
 import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
+
 from sklearn.model_selection import StratifiedKFold
 from torch import optim, nn
 from torch.optim import lr_scheduler
+from timm.optim import RAdam
 import albumentations as albu
 from albumentations.pytorch import ToTensorV2
 from pytorch_lightning import Trainer
@@ -15,7 +17,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.models import Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
-from src.losses import FocalLoss
+from src.losses import FocalLoss, FocalCosineLoss, LabelSmoothingLoss
+from src.augmentations import RandomAugMix
+
+
+import pytorch_lightning as pl
 
 
 # Image Augmentations
@@ -33,10 +39,11 @@ class ImageTransform:
                 albu.ShiftScaleRotate(p=0.5),
                 albu.OneOf([
                     albu.Blur(p=1.0),
-                    albu.GaussianBlur(p=1.0)
+                    albu.GaussianBlur(p=1.0),
                 ], p=0.5),
-                albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
                 albu.Normalize(mean, std),
+                albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
+                albu.Cutout(p=0.5),
                 ToTensorV2(),
             ], p=1.0),
 
@@ -75,24 +82,37 @@ def main(cfg: DictConfig):
     # Data Module  ---------------------------------------------------------------
     transform = ImageTransform(img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
-    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=True)
+    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=False)
     dm.prepare_data()
     dm.setup()
 
     # Model  ----------------------------------------------------------------------
     net = Timm_model(cfg.train.model_type, pretrained=True)
+
+    # for name, param in net.named_parameters():
+    #     if '.bn' in name:
+    #         param.requires_grad = False
+    #     else:
+    #         param.requires_grad = True
+
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
     # Loss fn  ---------------------------------------------------------------------
     # Cross Entropy Loss
-    criterion = nn.CrossEntropyLoss()
+    # criterion = nn.CrossEntropyLoss()
     # Focal Loss
     # criterion = FocalLoss()
-    
+    criterion = FocalCosineLoss()
+
+    # Label Smoothing
+    # criterion = LabelSmoothingLoss(smoothing=0.1)
+
 
     # Optimizer, Scheduler  --------------------------------------------------------
-    optimizer = optim.AdamW(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    # optimizer = optim.AdamW(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    optimizer = RAdam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+
     if cfg.train.scheduler == 'onecycle':
         steps_per_epoch = (len(glob.glob(os.path.join(data_dir, 'train_images', '*.jpg'))) // cfg.train.batch_size) + 1
         scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, epochs=cfg.train.epoch, steps_per_epoch=steps_per_epoch)
@@ -130,7 +150,7 @@ def main(cfg: DictConfig):
         callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
         amp_level='O2',
-        # num_sanity_val_steps=0,  # Skip Sanity Check
+        num_sanity_val_steps=0,  # Skip Sanity Check
     )
 
     # Train

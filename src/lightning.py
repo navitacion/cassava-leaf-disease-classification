@@ -3,6 +3,7 @@ import pandas as pd
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning import metrics
@@ -119,7 +120,7 @@ class CassavaLightningSystem(pl.LightningModule):
         out = self.forward(inp)
         loss = self.criterion(out, label.squeeze())
 
-        return loss, label, torch.sigmoid(out)
+        return loss, label, F.softmax(out, dim=1)
 
     def training_step(self, batch, batch_idx):
         loss, label, logits = self.step(batch)
@@ -145,7 +146,7 @@ class CassavaLightningSystem(pl.LightningModule):
             self.experiment.log_metrics(logs, epoch=self.epoch_num)
 
         # Save Weights
-        if self.best_loss > avg_loss:
+        if self.best_loss > avg_loss or self.best_acc < acc:
             self.best_loss = avg_loss.item()
             self.best_acc = acc.item()
             logs = {'val/best_loss': self.best_loss, 'val/best_acc': self.best_acc}
@@ -162,17 +163,3 @@ class CassavaLightningSystem(pl.LightningModule):
         self.epoch_num += 1
 
         return {'avg_val_loss': avg_loss}
-
-    # learning rate warm-up
-    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx,
-                       optimizer_closure, on_tpu, using_native_amp, using_lbfgs):
-        # warm up lr
-        if self.cfg.train.warmup_step > 0:
-            if self.trainer.global_step < self.cfg.train.warmup_step:
-                lr_scale = min(1., float(self.trainer.global_step + 1) / float(self.cfg.train.warmup_step))
-                for pg in optimizer.param_groups:
-                    pg['lr'] = lr_scale * self.cfg.train.lr
-
-        # update params
-        optimizer.step(closure=optimizer_closure)
-        optimizer.zero_grad()

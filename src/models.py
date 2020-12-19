@@ -26,3 +26,11 @@ if __name__ == '__main__':
     # Print Timm Models
     model_names = timm.list_models(pretrained=True)
     print(model_names)
+
+    model = Timm_model('resnext50_32x4d', pretrained=False)
+
+    print(model)
+
+    for name, param in model.named_parameters():
+        if '.bn' in name:
+            print(name)
