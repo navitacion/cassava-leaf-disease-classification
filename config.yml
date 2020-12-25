@@ -14,11 +14,12 @@ data:
 
 train:
   lr: 1e-4
-  epoch: 15
+  epoch: 25
   fold: 0
   batch_size: 16
-  num_workers: 2
+  num_workers: 8
   weight_decay: 1e-5
   model_type: efficientnet_b0
-  warmup_step: -1
   scheduler: cosine
+  cutmix_alpha: 0.4
+  use_cutmix: True

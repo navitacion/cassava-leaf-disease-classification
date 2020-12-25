@@ -9,12 +9,13 @@ import pytorch_lightning as pl
 from pytorch_lightning import metrics
 
 from .utils import CassavaDataset
+from .cutmix import CutMixCollator, CutMixCriterion
 
 class CassavaDataModule(pl.LightningDataModule):
     """
     DataModule for Cassava Competition
     """
-    def __init__(self, data_dir, cfg, transform, cv, use_merge=False):
+    def __init__(self, data_dir, cfg, transform, cv, use_merge=False, use_cutmix=False):
         """
         ------------------------------------
         Parameters
@@ -33,6 +34,7 @@ class CassavaDataModule(pl.LightningDataModule):
         self.transform = transform
         self.cv = cv
         self.use_merge = use_merge
+        self.use_cutmix = use_cutmix
 
     def prepare_data(self):
         # Prepare Data
@@ -55,11 +57,19 @@ class CassavaDataModule(pl.LightningDataModule):
         self.val_dataset = CassavaDataset(self.data_dir, self.transform, phase='val', df=val)
 
     def train_dataloader(self):
-        return DataLoader(self.train_dataset,
-                          batch_size=self.cfg.train.batch_size,
-                          pin_memory=True,
-                          num_workers=self.cfg.train.num_workers,
-                          shuffle=True)
+        if self.use_cutmix:
+            return DataLoader(self.train_dataset,
+                              batch_size=self.cfg.train.batch_size,
+                              pin_memory=True,
+                              collate_fn=CutMixCollator(self.cfg.train.cutmix_alpha),
+                              num_workers=self.cfg.train.num_workers,
+                              shuffle=True)
+        else:
+            return DataLoader(self.train_dataset,
+                              batch_size=self.cfg.train.batch_size,
+                              pin_memory=True,
+                              num_workers=self.cfg.train.num_workers,
+                              shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset,
@@ -93,7 +103,7 @@ class CassavaLightningSystem(pl.LightningModule):
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.best_loss = 1e+9
-        self.best_acc = None
+        self.best_acc = 0
         self.epoch_num = 0
         self.acc_fn = metrics.Accuracy()
 
@@ -101,34 +111,29 @@ class CassavaLightningSystem(pl.LightningModule):
         if self.scheduler is None:
             return [self.optimizer], []
         else:
-            # OneCycleはstepごとに更新する
-            if self.cfg.train.scheduler == 'onecycle':
-                self.scheduler = {
-                        'scheduler': self.scheduler,
-                        'monitor': 'loss',
-                        'interval': 'step',
-                        'frequency': 1,
-                        'strict': True,
-                    }
             return [self.optimizer], [self.scheduler]
 
     def forward(self, x):
         return self.net(x)
 
-    def step(self, batch):
+    def step(self, batch, phase='train'):
         inp, label = batch
         out = self.forward(inp)
-        loss = self.criterion(out, label.squeeze())
+        if self.cfg.train.use_cutmix and phase == 'train':
+            loss_fn = CutMixCriterion(criterion_base=self.criterion)
+            loss = loss_fn(out, label)
+        else:
+            loss = self.criterion(out, label.squeeze())
 
         return loss, label, F.softmax(out, dim=1)
 
     def training_step(self, batch, batch_idx):
-        loss, label, logits = self.step(batch)
+        loss, label, logits = self.step(batch, phase='train')
 
         return {'loss': loss, 'logits': logits, 'labels': label}
 
     def validation_step(self, batch, batch_idx):
-        loss, label, logits = self.step(batch)
+        loss, label, logits = self.step(batch, phase='val')
 
         return {'val_loss': loss, 'logits': logits, 'labels': label}
 
@@ -147,8 +152,8 @@ class CassavaLightningSystem(pl.LightningModule):
 
         # Save Weights
         if self.best_loss > avg_loss or self.best_acc < acc:
-            self.best_loss = avg_loss.item()
-            self.best_acc = acc.item()
+            self.best_loss = min(avg_loss.item(), self.best_loss)
+            self.best_acc = max(acc.item(), self.best_acc)
             logs = {'val/best_loss': self.best_loss, 'val/best_acc': self.best_acc}
             self.experiment.log_parameters(logs)
 

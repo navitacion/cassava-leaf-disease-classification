@@ -19,6 +19,7 @@ from src.models import Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 from src.losses import FocalLoss, FocalCosineLoss, LabelSmoothingLoss
 from src.augmentations import RandomAugMix
+from src.cutmix import CutMixCriterion
 
 
 import pytorch_lightning as pl
@@ -82,41 +83,31 @@ def main(cfg: DictConfig):
     # Data Module  ---------------------------------------------------------------
     transform = ImageTransform(img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
-    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=False)
+    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=True, use_cutmix=cfg.train.use_cutmix)
     dm.prepare_data()
     dm.setup()
 
     # Model  ----------------------------------------------------------------------
     net = Timm_model(cfg.train.model_type, pretrained=True)
 
-    # for name, param in net.named_parameters():
-    #     if '.bn' in name:
-    #         param.requires_grad = False
-    #     else:
-    #         param.requires_grad = True
-
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
     # Loss fn  ---------------------------------------------------------------------
     # Cross Entropy Loss
-    # criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss()
     # Focal Loss
     # criterion = FocalLoss()
-    criterion = FocalCosineLoss()
+    # criterion = FocalCosineLoss()
 
     # Label Smoothing
     # criterion = LabelSmoothingLoss(smoothing=0.1)
 
 
     # Optimizer, Scheduler  --------------------------------------------------------
-    # optimizer = optim.AdamW(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     optimizer = RAdam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
 
-    if cfg.train.scheduler == 'onecycle':
-        steps_per_epoch = (len(glob.glob(os.path.join(data_dir, 'train_images', '*.jpg'))) // cfg.train.batch_size) + 1
-        scheduler = lr_scheduler.OneCycleLR(optimizer, max_lr=cfg.train.lr, epochs=cfg.train.epoch, steps_per_epoch=steps_per_epoch)
-    elif cfg.train.scheduler == 'cosine':
+    if cfg.train.scheduler == 'cosine':
         scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
     elif cfg.train.scheduler == 'cosine-warmup':
         scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
