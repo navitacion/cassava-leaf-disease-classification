@@ -13,7 +13,7 @@ data:
   n_splits: 5
 
 train:
-  lr: 1e-4
+  lr: 3e-4
   epoch: 25
   fold: 0
   batch_size: 16
@@ -23,3 +23,4 @@ train:
   scheduler: cosine
   cutmix_alpha: 0.4
   use_cutmix: True
+  use_sam: False

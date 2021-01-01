@@ -130,6 +130,16 @@ class CassavaLightningSystem(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss, label, logits = self.step(batch, phase='train')
 
+        # SAM Optimizer - Manual Backward
+        if self.cfg.train.use_sam:
+            opt = self.optimizers()
+            self.manual_backward(loss, opt)
+            opt.first_step(zero_grad=True)
+
+            loss_2, label, logits = self.step(batch, phase='train')
+            self.manual_backward(loss_2, opt)
+            opt.second_step(zero_grad=True)
+
         return {'loss': loss, 'logits': logits, 'labels': label}
 
     def validation_step(self, batch, batch_idx):
@@ -158,7 +168,7 @@ class CassavaLightningSystem(pl.LightningModule):
             self.experiment.log_parameters(logs)
 
             expname = self.cfg.data.exp_name
-            filename = f'{expname}_fold_{self.cfg.train.fold}_epoch_{self.epoch_num}_loss_{self.best_loss:.3f}_acc_{self.best_acc:.3f}.pth'
+            filename = f'{expname}_fold_{self.cfg.train.fold}_epoch_{self.epoch_num}_loss_{avg_loss.item():.3f}_acc_{acc.item():.3f}.pth'
             torch.save(self.net.state_dict(), filename)
             if self.experiment is not None:
                 self.experiment.log_model(name=filename, file_or_folder='./'+filename)

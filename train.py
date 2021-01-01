@@ -18,11 +18,7 @@ from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.models import Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 from src.losses import FocalLoss, FocalCosineLoss, LabelSmoothingLoss
-from src.augmentations import RandomAugMix
-from src.cutmix import CutMixCriterion
-
-
-import pytorch_lightning as pl
+from src.sam import SAM
 
 
 # Image Augmentations
@@ -105,7 +101,11 @@ def main(cfg: DictConfig):
 
 
     # Optimizer, Scheduler  --------------------------------------------------------
-    optimizer = RAdam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    if cfg.train.use_sam:
+        base_optimizer = RAdam
+        optimizer = SAM(net.parameters(), base_optimizer, lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    else:
+        optimizer = RAdam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
 
     if cfg.train.scheduler == 'cosine':
         scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
@@ -142,6 +142,7 @@ def main(cfg: DictConfig):
         amp_backend='apex',
         amp_level='O2',
         num_sanity_val_steps=0,  # Skip Sanity Check
+        automatic_optimization=False if cfg.train.use_sam else True
     )
 
     # Train
