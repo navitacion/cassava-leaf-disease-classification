@@ -17,7 +17,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.models import Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
-from src.losses import FocalLoss, FocalCosineLoss, LabelSmoothingLoss
+from src.losses import get_loss_fn
 from src.sam import SAM
 
 
@@ -27,7 +27,7 @@ class ImageTransform:
         self.transform = {
             'train': albu.Compose([
                 albu.RandomShadow(p=0.5),
-                albu.RandomResizedCrop(img_size, img_size, interpolation=cv2.INTER_AREA),
+                albu.RandomResizedCrop(img_size, img_size),
                 albu.ColorJitter(p=0.5),
                 albu.CLAHE(p=0.5),
                 albu.HorizontalFlip(p=0.5),
@@ -40,12 +40,13 @@ class ImageTransform:
                 ], p=0.5),
                 albu.Normalize(mean, std),
                 albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
-                albu.Cutout(p=0.5),
+                # albu.CoarseDropout(max_height=img_size//16, max_width=img_size//16, min_holes=2, max_holes=8, p=0.5),
+                # albu.Cutout(p=0.5),
                 ToTensorV2(),
             ], p=1.0),
 
             'val': albu.Compose([
-                albu.Resize(img_size, img_size, interpolation=cv2.INTER_AREA),
+                albu.Resize(img_size, img_size),
                 albu.Normalize(mean, std),
                 ToTensorV2(),
             ], p=1.0)
@@ -79,7 +80,7 @@ def main(cfg: DictConfig):
     # Data Module  ---------------------------------------------------------------
     transform = ImageTransform(img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
-    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=True, use_cutmix=cfg.train.use_cutmix)
+    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=True, use_cutmix=cfg.train.use_cutmix, drop_noise=True)
     dm.prepare_data()
     dm.setup()
 
@@ -90,14 +91,7 @@ def main(cfg: DictConfig):
     experiment.set_model_graph(str(net))
 
     # Loss fn  ---------------------------------------------------------------------
-    # Cross Entropy Loss
-    criterion = nn.CrossEntropyLoss()
-    # Focal Loss
-    # criterion = FocalLoss()
-    # criterion = FocalCosineLoss()
-
-    # Label Smoothing
-    # criterion = LabelSmoothingLoss(smoothing=0.1)
+    criterion = get_loss_fn(cfg.train.loss_fn, smoothing=0.05)
 
 
     # Optimizer, Scheduler  --------------------------------------------------------
@@ -140,7 +134,7 @@ def main(cfg: DictConfig):
         gpus=-1,
         callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
-        amp_level='O2',
+        amp_level='O0',
         num_sanity_val_steps=0,  # Skip Sanity Check
         automatic_optimization=False if cfg.train.use_sam else True
     )

@@ -5,3 +5,4 @@ checkpoints/*
 */__pycache__/*
 enet_weight/*
 multirun/*
+weights/*

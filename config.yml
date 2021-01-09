@@ -23,4 +23,5 @@ train:
   scheduler: cosine
   cutmix_alpha: 0.4
   use_cutmix: True
-  use_sam: False
+  use_sam: True
+  loss_fn: crossentropy

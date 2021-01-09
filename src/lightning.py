@@ -10,12 +10,13 @@ from pytorch_lightning import metrics
 
 from .utils import CassavaDataset
 from .cutmix import CutMixCollator, CutMixCriterion
+from .utils import StratifiedSampler
 
 class CassavaDataModule(pl.LightningDataModule):
     """
     DataModule for Cassava Competition
     """
-    def __init__(self, data_dir, cfg, transform, cv, use_merge=False, use_cutmix=False):
+    def __init__(self, data_dir, cfg, transform, cv, use_merge=False, use_cutmix=False, drop_noise=False):
         """
         ------------------------------------
         Parameters
@@ -35,6 +36,7 @@ class CassavaDataModule(pl.LightningDataModule):
         self.cv = cv
         self.use_merge = use_merge
         self.use_cutmix = use_cutmix
+        self.drop_noise = drop_noise
 
     def prepare_data(self):
         # Prepare Data
@@ -42,6 +44,13 @@ class CassavaDataModule(pl.LightningDataModule):
             self.df = pd.read_csv(os.path.join(self.data_dir, 'merged.csv'))
         else:
             self.df = pd.read_csv(os.path.join(self.data_dir, 'train.csv'))
+
+        if self.drop_noise:
+            threshhold = 0.01
+            probability = pd.read_csv(os.path.join(self.data_dir, 'probability.csv'))
+            probability = probability[probability['pred'] > threshhold]
+            use_image_ids = probability['image_id'].values
+            self.df = self.df[self.df['image_id'].isin(use_image_ids)].reset_index(drop=True)
 
     def setup(self, stage=None):
         # Validation
@@ -60,21 +69,23 @@ class CassavaDataModule(pl.LightningDataModule):
         if self.use_cutmix:
             return DataLoader(self.train_dataset,
                               batch_size=self.cfg.train.batch_size,
-                              pin_memory=True,
+                              pin_memory=False,
                               collate_fn=CutMixCollator(self.cfg.train.cutmix_alpha),
                               num_workers=self.cfg.train.num_workers,
+                              # sampler=StratifiedSampler(self.train_dataset.df['label'].values),
                               shuffle=True)
         else:
             return DataLoader(self.train_dataset,
                               batch_size=self.cfg.train.batch_size,
-                              pin_memory=True,
+                              pin_memory=False,
                               num_workers=self.cfg.train.num_workers,
+                              # sampler=StratifiedSampler(self.train_dataset.df['label'].values),
                               shuffle=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_dataset,
                           batch_size=self.cfg.train.batch_size,
-                          pin_memory=True,
+                          pin_memory=False,
                           num_workers=self.cfg.train.num_workers,
                           shuffle=False)
 
@@ -117,7 +128,7 @@ class CassavaLightningSystem(pl.LightningModule):
         return self.net(x)
 
     def step(self, batch, phase='train'):
-        inp, label = batch
+        inp, label, _ = batch
         out = self.forward(inp)
         if self.cfg.train.use_cutmix and phase == 'train':
             loss_fn = CutMixCriterion(criterion_base=self.criterion)
@@ -168,7 +179,7 @@ class CassavaLightningSystem(pl.LightningModule):
             self.experiment.log_parameters(logs)
 
             expname = self.cfg.data.exp_name
-            filename = f'{expname}_fold_{self.cfg.train.fold}_epoch_{self.epoch_num}_loss_{avg_loss.item():.3f}_acc_{acc.item():.3f}.pth'
+            filename = f'{expname}_seed_{self.cfg.data.seed}_fold_{self.cfg.train.fold}_epoch_{self.epoch_num}_loss_{avg_loss.item():.3f}_acc_{acc.item():.3f}.pth'
             torch.save(self.net.state_dict(), filename)
             if self.experiment is not None:
                 self.experiment.log_model(name=filename, file_or_folder='./'+filename)

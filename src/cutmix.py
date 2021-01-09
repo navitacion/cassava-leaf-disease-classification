@@ -4,7 +4,7 @@ import torch
 
 
 def cutmix(batch, alpha):
-    data, targets = batch
+    data, targets, img_id = batch
     indices = torch.randperm(data.size(0))
     shuffled_data = data[indices]
     shuffled_targets = targets[indices]
@@ -24,7 +24,7 @@ def cutmix(batch, alpha):
     data[:, :, y0:y1, x0:x1] = shuffled_data[:, :, y0:y1, x0:x1]
     targets = (targets, shuffled_targets, lam)
 
-    return data, targets
+    return data, targets, img_id
 
 
 class CutMixCollator:
