@@ -1,63 +1,23 @@
 import os
-import cv2
 import glob
 import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
 
 from sklearn.model_selection import StratifiedKFold
-from torch import optim, nn
 from torch.optim import lr_scheduler
 from timm.optim import RAdam
-import albumentations as albu
-from albumentations.pytorch import ToTensorV2
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
+from src.augmentations import get_transforms
 from src.models import Timm_model
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 from src.losses import get_loss_fn
 from src.sam import SAM
 
-
-# Image Augmentations
-class ImageTransform:
-    def __init__(self, img_size=224, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        self.transform = {
-            'train': albu.Compose([
-                albu.RandomShadow(p=0.5),
-                albu.RandomResizedCrop(img_size, img_size),
-                albu.ColorJitter(p=0.5),
-                albu.CLAHE(p=0.5),
-                albu.HorizontalFlip(p=0.5),
-                albu.VerticalFlip(p=0.5),
-                albu.Transpose(p=0.5),
-                albu.ShiftScaleRotate(p=0.5),
-                albu.OneOf([
-                    albu.Blur(p=1.0),
-                    albu.GaussianBlur(p=1.0),
-                ], p=0.5),
-                albu.Normalize(mean, std),
-                albu.CoarseDropout(max_height=15, max_width=15, min_holes=3, p=0.5),
-                # albu.CoarseDropout(max_height=img_size//16, max_width=img_size//16, min_holes=2, max_holes=8, p=0.5),
-                # albu.Cutout(p=0.5),
-                ToTensorV2(),
-            ], p=1.0),
-
-            'val': albu.Compose([
-                albu.Resize(img_size, img_size),
-                albu.Normalize(mean, std),
-                ToTensorV2(),
-            ], p=1.0)
-        }
-
-    def __call__(self, img, phase='train'):
-        augmented = self.transform[phase](image=img)
-        augmented = augmented['image']
-
-        return augmented
-
+DEBUG = True
 
 @hydra.main('config.yml')
 def main(cfg: DictConfig):
@@ -78,9 +38,12 @@ def main(cfg: DictConfig):
     experiment.log_parameters(dict(cfg.train))
 
     # Data Module  ---------------------------------------------------------------
-    transform = ImageTransform(img_size=cfg.data.img_size)
+    transform = get_transforms(transform_name=cfg.data.transform, img_size=cfg.data.img_size)
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
-    dm = CassavaDataModule(data_dir, cfg, transform, cv, use_merge=True, use_cutmix=cfg.train.use_cutmix, drop_noise=True)
+    dm = CassavaDataModule(data_dir, cfg, transform, cv,
+                           use_merge=True,
+                           drop_noise=cfg.data.drop_noise,
+                           sample=DEBUG)
     dm.prepare_data()
     dm.setup()
 
@@ -92,7 +55,6 @@ def main(cfg: DictConfig):
 
     # Loss fn  ---------------------------------------------------------------------
     criterion = get_loss_fn(cfg.train.loss_fn, smoothing=0.05)
-
 
     # Optimizer, Scheduler  --------------------------------------------------------
     if cfg.train.use_sam:

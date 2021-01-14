@@ -10,29 +10,6 @@ from torch.nn import functional as F
 
 from src.models import Timm_model
 from src.losses import MyLabelSmoothingLoss
+import torchvision.datasets as datasets
 
 pd.set_option('display.max_rows', None)
-
-# weight = 0.05
-#
-# target = torch.randint(0, 5, (8, 1))
-# pred = torch.randn((8, 5))
-# print(target)
-# target = F.one_hot(target, num_classes=5)
-#
-# print(target)
-#
-# import torchvision
-#
-#
-# total_trainset = torchvision.datasets.CIFAR10(root="./dataset/CIFAR-10", train=True,  download=True)
-# train_labels = total_trainset.targets
-#
-# print(train_labels)
-
-
-a = pd.read_csv('./input/probability.csv')
-
-a = a.sort_values(by='pred')
-
-print(a.head(1000))

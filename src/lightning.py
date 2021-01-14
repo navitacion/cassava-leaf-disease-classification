@@ -1,5 +1,7 @@
 import os
+import numpy as np
 import pandas as pd
+from sklearn.model_selection import StratifiedKFold
 
 import torch
 from torch import nn
@@ -9,14 +11,107 @@ import pytorch_lightning as pl
 from pytorch_lightning import metrics
 
 from .utils import CassavaDataset
-from .cutmix import CutMixCollator, CutMixCriterion
 from .utils import StratifiedSampler
+from .cutmix import cutmix, CutMixCriterion
+from .mixup import mixup, MixupCriterion
+from .snapmix import snapmix, SnapMixLoss
+
+
+# 目視で確認
+drop_images = [
+    '9224019.jpg',
+    '102968016.jpg',
+    '159654644.jpg',
+    '199112616.jpg',
+    '262902341.jpg',
+    '313266547.jpg',
+    '314640668.jpg',
+    '357924077.jpg',
+    '421035788.jpg',
+    '479472063.jpg',
+    '490603548.jpg',
+    '520111872.jpg',
+    '549854027.jpg',
+    '554488826.jpg',
+    '580111608.jpg',
+    '600736721.jpg',
+    '616718743.jpg',
+    '695438825.jpg',
+    '723564013.jpg',
+    '744383303.jpg',
+    '746746526.jpg',
+    '826231979.jpg',
+    '835290707.jpg',
+    '847847826.jpg',
+    '873637313.jpg',
+    '888983519.jpg',
+    '992748624.jpg',
+    '1004389140.jpg',
+    '1008244905.jpg',
+    '1010470173.jpg',
+    '1014492188.jpg',
+    '1119403430.jpg',
+    '1338159402.jpg',
+    '1339403533.jpg',
+    '1357797590.jpg',
+    '1359893940.jpg',
+    '1366430957.jpg',
+    '1403621003.jpg',
+    '1689510013.jpg',
+    '1770746162.jpg',
+    '1773381712.jpg',
+    '1819546557.jpg',
+    '1841279687.jpg',
+    '1848686439.jpg',
+    '1862072615.jpg',
+    '1960041118.jpg',
+    '2074713873.jpg',
+    '2084868828.jpg',
+    '2099754293.jpg',
+    '2161797110.jpg',
+    '2182500020.jpg',
+    '2213446334.jpg',
+    '2229847111.jpg',
+    '2278166989.jpg',
+    '2282957832.jpg',
+    '2321669192.jpg',
+    '2382642453.jpg',
+    '2445684335.jpg',
+    '2482667092.jpg',
+    '2484530081.jpg',
+    '2489013604.jpg',
+    '2604713994.jpg',
+    '2642216511.jpg',
+    '2719114674.jpg',
+    '2839068946.jpg',
+    '3040241097.jpg',
+    '3058561440.jpg',
+    '3126296051.jpg',
+    '3251960666.jpg',
+    '3252232501.jpg',
+    '3421208425.jpg',
+    '3425850136.jpg',
+    '3435954655.jpg',
+    '3477169212.jpg',
+    '3609350672.jpg',
+    '3609986814.jpg',
+    '3652033201.jpg',
+    '3724956866.jpg',
+    '3746679490.jpg',
+    '3838556102.jpg',
+    '3892366593.jpg',
+    '3966432707.jpg',
+    '4060987360.jpg',
+    '4089218356.jpg',
+    '4269208386.jpg',
+]
 
 class CassavaDataModule(pl.LightningDataModule):
     """
     DataModule for Cassava Competition
     """
-    def __init__(self, data_dir, cfg, transform, cv, use_merge=False, use_cutmix=False, drop_noise=False):
+    def __init__(self, data_dir, cfg, transform, cv,
+                 use_merge=False, drop_noise=False, sample=False):
         """
         ------------------------------------
         Parameters
@@ -35,8 +130,8 @@ class CassavaDataModule(pl.LightningDataModule):
         self.transform = transform
         self.cv = cv
         self.use_merge = use_merge
-        self.use_cutmix = use_cutmix
         self.drop_noise = drop_noise
+        self.sample = sample
 
     def prepare_data(self):
         # Prepare Data
@@ -46,11 +141,24 @@ class CassavaDataModule(pl.LightningDataModule):
             self.df = pd.read_csv(os.path.join(self.data_dir, 'train.csv'))
 
         if self.drop_noise:
+            # 予測結果からかけ離れたものを除外
             threshhold = 0.01
             probability = pd.read_csv(os.path.join(self.data_dir, 'probability.csv'))
             probability = probability[probability['pred'] > threshhold]
             use_image_ids = probability['image_id'].values
             self.df = self.df[self.df['image_id'].isin(use_image_ids)].reset_index(drop=True)
+
+            # 手動で確認したものを除外
+            # self.df = self.df[~self.df['image_id'].isin(drop_images)].reset_index(drop=True)
+
+        # 学習高速化のためにデータを1/3に分割
+        if self.sample:
+            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=0)
+            self.df['fold'] = -1
+            for i, (trn_idx, val_idx) in enumerate(cv.split(self.df, self.df['label'])):
+                self.df.loc[val_idx, 'fold'] = i
+            self.df = self.df[self.df['fold'] == 0].reset_index(drop=True)
+            self.df = self.df.drop(['fold'], axis=1)
 
     def setup(self, stage=None):
         # Validation
@@ -66,16 +174,7 @@ class CassavaDataModule(pl.LightningDataModule):
         self.val_dataset = CassavaDataset(self.data_dir, self.transform, phase='val', df=val)
 
     def train_dataloader(self):
-        if self.use_cutmix:
-            return DataLoader(self.train_dataset,
-                              batch_size=self.cfg.train.batch_size,
-                              pin_memory=False,
-                              collate_fn=CutMixCollator(self.cfg.train.cutmix_alpha),
-                              num_workers=self.cfg.train.num_workers,
-                              # sampler=StratifiedSampler(self.train_dataset.df['label'].values),
-                              shuffle=True)
-        else:
-            return DataLoader(self.train_dataset,
+        return DataLoader(self.train_dataset,
                               batch_size=self.cfg.train.batch_size,
                               pin_memory=False,
                               num_workers=self.cfg.train.num_workers,
@@ -125,36 +224,88 @@ class CassavaLightningSystem(pl.LightningModule):
             return [self.optimizer], [self.scheduler]
 
     def forward(self, x):
-        return self.net(x)
+        output = self.net(x)
+        return output
 
-    def step(self, batch, phase='train'):
+    def step(self, batch, phase='train', rand=None, packed=None):
         inp, label, _ = batch
-        out = self.forward(inp)
-        if self.cfg.train.use_cutmix and phase == 'train':
-            loss_fn = CutMixCriterion(criterion_base=self.criterion)
-            loss = loss_fn(out, label)
+
+        if rand is None:
+            rand = np.random.rand()
+
+        # Cutmix
+        # if rand > (1.0 - self.cfg.train.cutmix_pct) and phase == 'train':
+        #     if packed is None:
+        #         _inp, label = cutmix(inp, label, alpha=self.cfg.train.cutmix_alpha)
+        #         packed = (_inp, label)
+        #     else:
+        #         _inp, label = packed
+        #     out = self.forward(_inp)
+        #     loss_fn = CutMixCriterion(criterion_base=self.criterion)
+        #     loss = loss_fn(out, label)
+        #
+        # # Mixup
+        # elif rand > (1.0 - self.cfg.train.mixup_pct) and phase == 'train':
+        #     if packed is None:
+        #         _inp, label = mixup(inp, label, alpha=self.cfg.train.mixup_alpha)
+        #         packed = (_inp, label)
+        #     else:
+        #         _inp, label = packed
+        #     out = self.forward(_inp)
+        #     loss_fn = MixupCriterion(criterion_base=self.criterion)
+        #     loss = loss_fn(out, label)
+        # else:
+        #     out = self.forward(inp)
+        #     loss = self.criterion(out, label.squeeze())
+
+        # Cutmixと通常のlossの平均を算出する  ----------------------------------------------------
+        if phase == 'train':
+            if packed is None:
+                _inp, _label = cutmix(inp, label, alpha=self.cfg.train.cutmix_alpha)
+                packed = (_inp, _label)
+            else:
+                _inp, _label = packed
+            out = self.forward(_inp)
+            loss_fn = CutMixCriterion(criterion_base=nn.CrossEntropyLoss())
+            loss_cutmix = loss_fn(out, _label)
+
+            out = self.forward(inp)
+            loss_default = self.criterion(out, label.squeeze())
+
+            # cutmixと通常のlossを平均
+            loss = (loss_cutmix + loss_default) / 2
+
         else:
+            out = self.forward(inp)
             loss = self.criterion(out, label.squeeze())
 
-        return loss, label, F.softmax(out, dim=1)
+        # -----------------------------------------------------------------------------------------
+
+
+        return loss, label, F.softmax(out, dim=1), rand, packed
 
     def training_step(self, batch, batch_idx):
-        loss, label, logits = self.step(batch, phase='train')
-
-        # SAM Optimizer - Manual Backward
+        # SAM Optimizer - Second Time Manual Backward
         if self.cfg.train.use_sam:
             opt = self.optimizers()
-            self.manual_backward(loss, opt)
+            loss_1, _, _, rand, packed = self.step(batch, phase='train')
+            self.manual_backward(loss_1, opt)
             opt.first_step(zero_grad=True)
 
-            loss_2, label, logits = self.step(batch, phase='train')
+            loss_2, _, _, _, _ = self.step(batch, phase='train', rand=rand, packed=packed)
             self.manual_backward(loss_2, opt)
             opt.second_step(zero_grad=True)
 
-        return {'loss': loss, 'logits': logits, 'labels': label}
+            loss = (loss_1 + loss_2) / 2
+
+        # Default Optimizer  Once Auto Backward
+        else:
+            loss, _, _, _, _ = self.step(batch, phase='train')
+
+        return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
-        loss, label, logits = self.step(batch, phase='val')
+        loss, label, logits, _, _ = self.step(batch, phase='val')
 
         return {'val_loss': loss, 'logits': logits, 'labels': label}
 

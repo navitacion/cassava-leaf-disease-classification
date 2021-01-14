@@ -1,10 +1,8 @@
-
 import numpy as np
 import torch
 
-
-def cutmix(batch, alpha):
-    data, targets, img_id = batch
+# Reference: https://github.com/hysts/pytorch_cutmix/blob/master/cutmix.py
+def cutmix(data, targets, alpha):
     indices = torch.randperm(data.size(0))
     shuffled_data = data[indices]
     shuffled_targets = targets[indices]
@@ -24,17 +22,7 @@ def cutmix(batch, alpha):
     data[:, :, y0:y1, x0:x1] = shuffled_data[:, :, y0:y1, x0:x1]
     targets = (targets, shuffled_targets, lam)
 
-    return data, targets, img_id
-
-
-class CutMixCollator:
-    def __init__(self, alpha):
-        self.alpha = alpha
-
-    def __call__(self, batch):
-        batch = torch.utils.data.dataloader.default_collate(batch)
-        batch = cutmix(batch, self.alpha)
-        return batch
+    return data, targets
 
 
 class CutMixCriterion:

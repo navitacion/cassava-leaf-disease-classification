@@ -4,24 +4,30 @@ hydra:
 
 comet_ml:
   api_key: LSTIie51umcysQtnef1Zzil6V
-  project_name: cassava-leaf-disease-classification
+  project_name: cassava-leaf-disease-classification-2
 
 data:
   exp_name: test
   seed: 42
   img_size: 512
   n_splits: 5
+  drop_noise: False
+  transform: t_7
 
 train:
   lr: 3e-4
-  epoch: 25
+  epoch: 20
   fold: 0
   batch_size: 16
   num_workers: 8
   weight_decay: 1e-5
-  model_type: efficientnet_b0
+  model_type: tf_efficientnet_b0_ns
   scheduler: cosine
-  cutmix_alpha: 0.4
-  use_cutmix: True
-  use_sam: True
+  cutmix_pct: 0.5
+  cutmix_alpha: 1.0
+  mixup_pct: 0.0
+  mixup_alpha: 0.5
+  snapmix_pct: 0.0
+  snapmix_alpha: 5.0
+  use_sam: False
   loss_fn: crossentropy
