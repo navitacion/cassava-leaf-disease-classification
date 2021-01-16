@@ -17,7 +17,7 @@ from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 from src.losses import get_loss_fn
 from src.sam import SAM
 
-DEBUG = True
+DEBUG = False
 
 @hydra.main('config.yml')
 def main(cfg: DictConfig):

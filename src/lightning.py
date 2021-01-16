@@ -142,14 +142,14 @@ class CassavaDataModule(pl.LightningDataModule):
 
         if self.drop_noise:
             # 予測結果からかけ離れたものを除外
-            threshhold = 0.01
-            probability = pd.read_csv(os.path.join(self.data_dir, 'probability.csv'))
-            probability = probability[probability['pred'] > threshhold]
-            use_image_ids = probability['image_id'].values
-            self.df = self.df[self.df['image_id'].isin(use_image_ids)].reset_index(drop=True)
+            # threshhold = 0.01
+            # probability = pd.read_csv(os.path.join(self.data_dir, 'probability.csv'))
+            # probability = probability[probability['pred'] > threshhold]
+            # use_image_ids = probability['image_id'].values
+            # self.df = self.df[self.df['image_id'].isin(use_image_ids)].reset_index(drop=True)
 
             # 手動で確認したものを除外
-            # self.df = self.df[~self.df['image_id'].isin(drop_images)].reset_index(drop=True)
+            self.df = self.df[~self.df['image_id'].isin(drop_images)].reset_index(drop=True)
 
         # 学習高速化のためにデータを1/3に分割
         if self.sample:
@@ -228,59 +228,38 @@ class CassavaLightningSystem(pl.LightningModule):
         return output
 
     def step(self, batch, phase='train', rand=None, packed=None):
-        inp, label, _ = batch
-
         if rand is None:
             rand = np.random.rand()
 
+        if packed is None:
+            inp, label, _ = batch
+        else:
+            inp, label = packed
+
         # Cutmix
-        # if rand > (1.0 - self.cfg.train.cutmix_pct) and phase == 'train':
-        #     if packed is None:
-        #         _inp, label = cutmix(inp, label, alpha=self.cfg.train.cutmix_alpha)
-        #         packed = (_inp, label)
-        #     else:
-        #         _inp, label = packed
-        #     out = self.forward(_inp)
-        #     loss_fn = CutMixCriterion(criterion_base=self.criterion)
-        #     loss = loss_fn(out, label)
-        #
-        # # Mixup
-        # elif rand > (1.0 - self.cfg.train.mixup_pct) and phase == 'train':
-        #     if packed is None:
-        #         _inp, label = mixup(inp, label, alpha=self.cfg.train.mixup_alpha)
-        #         packed = (_inp, label)
-        #     else:
-        #         _inp, label = packed
-        #     out = self.forward(_inp)
-        #     loss_fn = MixupCriterion(criterion_base=self.criterion)
-        #     loss = loss_fn(out, label)
-        # else:
-        #     out = self.forward(inp)
-        #     loss = self.criterion(out, label.squeeze())
-
-        # Cutmixと通常のlossの平均を算出する  ----------------------------------------------------
-        if phase == 'train':
+        if rand > (1.0 - self.cfg.train.cutmix_pct) and phase == 'train':
             if packed is None:
-                _inp, _label = cutmix(inp, label, alpha=self.cfg.train.cutmix_alpha)
-                packed = (_inp, _label)
+                inp, label = cutmix(inp, label, alpha=self.cfg.train.cutmix_alpha)
+                packed = (inp, label)
             else:
-                _inp, _label = packed
-            out = self.forward(_inp)
-            loss_fn = CutMixCriterion(criterion_base=nn.CrossEntropyLoss())
-            loss_cutmix = loss_fn(out, _label)
-
+                pass
             out = self.forward(inp)
-            loss_default = self.criterion(out, label.squeeze())
+            loss_fn = CutMixCriterion(criterion_base=self.criterion)
+            loss = loss_fn(out, label)
 
-            # cutmixと通常のlossを平均
-            loss = (loss_cutmix + loss_default) / 2
-
+        # Mixup
+        elif rand > (1.0 - self.cfg.train.mixup_pct) and phase == 'train':
+            if packed is None:
+                inp, label = mixup(inp, label, alpha=self.cfg.train.mixup_alpha)
+                packed = (inp, label)
+            else:
+                _inp, label = packed
+            out = self.forward(inp)
+            loss_fn = MixupCriterion(criterion_base=self.criterion)
+            loss = loss_fn(out, label)
         else:
             out = self.forward(inp)
             loss = self.criterion(out, label.squeeze())
-
-        # -----------------------------------------------------------------------------------------
-
 
         return loss, label, F.softmax(out, dim=1), rand, packed
 

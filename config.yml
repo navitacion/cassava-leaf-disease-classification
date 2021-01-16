@@ -29,5 +29,5 @@ train:
   mixup_alpha: 0.5
   snapmix_pct: 0.0
   snapmix_alpha: 5.0
-  use_sam: False
+  use_sam: True
   loss_fn: crossentropy
