@@ -1,5 +1,5 @@
 input/*
-chechpoints/*
-enet_weight/*
+checkpoints/*
+weights/*
 hydra_output/*
 multirun/*
