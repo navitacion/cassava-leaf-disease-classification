@@ -6,10 +6,9 @@ import math
 import random
 
 
-def get_loss_fn(loss_fn_name, smoothing=0.05):
-
+def get_loss_fn(loss_fn_name, weight=None, smoothing=0.05):
     loss_fn_dict = {
-        'crossentropy': nn.CrossEntropyLoss(),
+        'crossentropy': nn.CrossEntropyLoss(weight=weight),
         'focalloss': FocalLoss(),
         'focalcosineloss': FocalCosineLoss(smoothing=smoothing),
         'labelsmoothing': MyLabelSmoothingLoss(smoothing=smoothing),
@@ -52,8 +51,9 @@ class FocalLoss(nn.Module):
 
 # Reference https://www.kaggle.com/c/cassava-leaf-disease-classification/discussion/203271
 class FocalCosineLoss(nn.Module):
-    def __init__(self, alpha=1, gamma=2, xent=.1, classes=5, smoothing=0.0, p=0.5):
+    def __init__(self, weight=None, alpha=1, gamma=2, xent=.1, classes=5, smoothing=0.0, p=0.5):
         super(FocalCosineLoss, self).__init__()
+        self.weight = weight
         self.alpha = alpha
         self.gamma = gamma
         self.xent = xent
@@ -68,9 +68,11 @@ class FocalCosineLoss(nn.Module):
         if self.smoothing > 0 and random.random() > self.p:
             t = (t - self.smoothing).abs()
 
-        cosine_loss = F.cosine_embedding_loss(input, t, self.y, reduction=reduction)
+        cosine_loss = F.cosine_embedding_loss(F.normalize(input), t, self.y, reduction=reduction)
+        cent_loss = F.cross_entropy(input, target, weight=self.weight, reduce=False)
 
-        cent_loss = F.cross_entropy(F.normalize(input), target, reduce=False)
+        # cosine_loss = F.cosine_embedding_loss(input, t, self.y, reduction=reduction)
+        # cent_loss = F.cross_entropy(F.normalize(input), target, weight=self.weight, reduce=False)
         pt = torch.exp(-cent_loss)
         focal_loss = self.alpha * (1-pt)**self.gamma * cent_loss
 

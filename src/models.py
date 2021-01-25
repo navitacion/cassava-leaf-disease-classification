@@ -57,49 +57,35 @@ class Timm_model(nn.Module):
         return self.base(x)
 
 
-class EFNet_b0_with_Attention(nn.Module):
-    def __init__(self, pretrained=True):
-        super(EFNet_b0_with_Attention, self).__init__()
-        self.timm = Timm_model('efficientnet_b0', pretrained=pretrained)
-
-        self.attemtion_1 = Self_Attention(in_dim=24)
-        # self.attemtion_2 = Self_Attention(in_dim=112)
+class Ensembler(nn.Module):
+    def __init__(self, model_names, weights, pretrained=True, out_dim=5):
+        super(Ensembler, self).__init__()
+        self.models = nn.ModuleList([Timm_model(model_name, pretrained, out_dim) for model_name in model_names])
+        self.weights = weights
 
     def forward(self, x):
-        out = self.timm.base.conv_stem(x)
-        out = self.timm.base.bn1(out)
-        out = self.timm.base.act1(out)
-        out = self.timm.base.blocks[0](out)
-        out = self.timm.base.blocks[1](out)
-        out, _ = self.attemtion_1(out)
-        out = self.timm.base.blocks[2](out)
-        out = self.timm.base.blocks[3](out)
-        out = self.timm.base.blocks[4](out)
-        # out, _ = self.attemtion_2(out)
-        out = self.timm.base.blocks[5](out)
-        out = self.timm.base.blocks[6](out)
+        outs = []
+        for m in self.models:
+            outs.append(m(x))
 
-        out = self.timm.base.conv_head(out)
-        out = self.timm.base.bn2(out)
-        out = self.timm.base.act2(out)
-        out = self.timm.base.global_pool(out)
-        out = self.timm.base.classifier(out)
+        out = torch.zeros_like(outs[0])
+        for o, w in zip(outs, self.weights):
+            out += o * w
 
+        del outs
         return out
-
-
 
 
 if __name__ == '__main__':
     # Print Timm Models
     model_names = timm.list_models(pretrained=True)
-    # print(model_names)
+    print(model_names)
 
-    net = Timm_model(model_name='efficientnet_b0', pretrained=False)
-    # print(net)
-    inp = torch.randn(4, 3, 224, 224)
-
-    out, out2 = net(inp)
-
-    print(out.size())
-    print(out2.size())
+    # models = ['resnet18', 'efficientnet_b0']
+    # weights = [0.4, 0.6]
+    # net = Ensembler(models, weights)
+    #
+    # z = torch.randn(3, 3, 512, 512)
+    # out = net(z)
+    #
+    # print(out.size())

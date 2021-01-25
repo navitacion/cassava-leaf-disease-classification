@@ -1,10 +1,12 @@
 import os
 import glob
+import pandas as pd
 import hydra
 from omegaconf import DictConfig
 from comet_ml import Experiment
 
 from sklearn.model_selection import StratifiedKFold
+import torch
 from torch.optim import lr_scheduler
 from timm.optim import RAdam
 from pytorch_lightning import Trainer
@@ -12,7 +14,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.augmentations import get_transforms
-from src.models import Timm_model
+from src.models import Timm_model, Ensembler
 from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
 from src.losses import get_loss_fn
 from src.sam import SAM
@@ -26,7 +28,6 @@ def main(cfg: DictConfig):
     os.chdir(cur_dir)
     # Config  -------------------------------------------------------------------
     data_dir = './input'
-    checkpoint_path = './checkpoints'
     seed_everything(cfg.data.seed)
 
     # Comet_ml
@@ -44,17 +45,24 @@ def main(cfg: DictConfig):
                            use_merge=True,
                            drop_noise=cfg.data.drop_noise,
                            sample=DEBUG)
-    dm.prepare_data()
-    dm.setup()
 
     # Model  ----------------------------------------------------------------------
     net = Timm_model(cfg.train.model_type, pretrained=True)
+    # models = [cfg.train.model_type, 'vit_base_patch16_384']
+    # weights = [0.6, 0.4]
+    # net = Ensembler(models, weights, pretrained=True)
 
     # Log Model Graph
     experiment.set_model_graph(str(net))
 
     # Loss fn  ---------------------------------------------------------------------
-    criterion = get_loss_fn(cfg.train.loss_fn, smoothing=0.05)
+    df = pd.read_csv('./input/merged.csv')
+    weight = df['label'].value_counts().sort_index().tolist()
+    weight = [w / len(df) for w in weight]
+    weight = torch.tensor(weight).cuda()
+    del df
+
+    criterion = get_loss_fn(cfg.train.loss_fn, weight=weight, smoothing=0.05)
 
     # Optimizer, Scheduler  --------------------------------------------------------
     if cfg.train.use_sam:
@@ -69,36 +77,22 @@ def main(cfg: DictConfig):
         scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
 
     # Lightning Module  -------------------------------------------------------------
-    model = CassavaLightningSystem(net, cfg, criterion=criterion, optimizer=optimizer, scheduler=scheduler, experiment=experiment)
-
-    # Callbacks  --------------------------------------------------------------------
-    checkpoint_callback = ModelCheckpoint(
-        filepath=checkpoint_path,
-        save_top_k=1,
-        monitor='avg_val_loss',
-        verbose=False,
-        mode='min',
-        prefix=cfg.data.exp_name + '_'
-    )
-
-    early_stop_callback = EarlyStopping(
-        monitor='avg_val_loss',
-        min_delta=0.00,
-        patience=100,
-        verbose=False,
-        mode='min'
-    )
+    model = CassavaLightningSystem(net, cfg,
+                                   criterion=criterion,
+                                   optimizer=optimizer,
+                                   scheduler=scheduler,
+                                   experiment=experiment)
 
     # Trainer  -------------------------------------------------------------------------
     trainer = Trainer(
         logger=False,
         max_epochs=cfg.train.epoch,
         gpus=-1,
-        callbacks=[checkpoint_callback, early_stop_callback],
         amp_backend='apex',
-        amp_level='O0',
+        amp_level='O2',
         num_sanity_val_steps=0,  # Skip Sanity Check
-        automatic_optimization=False if cfg.train.use_sam else True
+        automatic_optimization=False if cfg.train.use_sam else True,
+        # resume_from_checkpoint='./checkpoints/epoch=3-step=14047.ckpt'
     )
 
     # Train

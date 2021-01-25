@@ -24,10 +24,10 @@ train:
   model_type: tf_efficientnet_b0_ns
   scheduler: cosine
   cutmix_pct: 0.5
-  cutmix_alpha: 1.0
+  cutmix_alpha: 0.4
   mixup_pct: 0.0
   mixup_alpha: 0.5
-  snapmix_pct: 0.0
-  snapmix_alpha: 5.0
-  use_sam: True
-  loss_fn: crossentropy
+  resizemix_pct: 0.0
+  resizemix_alpha: 1.0
+  use_sam: False
+  loss_fn: focalcosineloss

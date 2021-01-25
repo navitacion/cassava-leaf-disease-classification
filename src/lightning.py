@@ -1,4 +1,5 @@
 import os
+import itertools
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
@@ -12,7 +13,7 @@ from pytorch_lightning import metrics
 
 from .utils import CassavaDataset
 from .utils import StratifiedSampler
-from .cutmix import cutmix, CutMixCriterion
+from .cutmix import cutmix, CutMixCriterion, resizemix
 from .mixup import mixup, MixupCriterion
 from .snapmix import snapmix, SnapMixLoss
 
@@ -232,17 +233,29 @@ class CassavaLightningSystem(pl.LightningModule):
             rand = np.random.rand()
 
         if packed is None:
-            inp, label, _ = batch
+            inp, label, img_id = batch
         else:
             inp, label = packed
 
+        # Cutmixを徐々にへらす
+        # th = self.current_epoch * 0.1
+        # Cutmixはずっと一定に発生
+        th = 1.0
+
         # Cutmix
-        if rand > (1.0 - self.cfg.train.cutmix_pct) and phase == 'train':
+        if rand > (th - self.cfg.train.cutmix_pct) and phase == 'train':
             if packed is None:
                 inp, label = cutmix(inp, label, alpha=self.cfg.train.cutmix_alpha)
                 packed = (inp, label)
             else:
                 pass
+            out = self.forward(inp)
+            loss_fn = CutMixCriterion(criterion_base=self.criterion)
+            loss = loss_fn(out, label)
+
+        # ResizeMix
+        elif rand > (th - self.cfg.train.resizemix_pct) and phase == 'train':
+            inp, label = resizemix(inp, label, alpha=self.cfg.train.resizemix_alpha)
             out = self.forward(inp)
             loss_fn = CutMixCriterion(criterion_base=self.criterion)
             loss = loss_fn(out, label)
@@ -261,17 +274,17 @@ class CassavaLightningSystem(pl.LightningModule):
             out = self.forward(inp)
             loss = self.criterion(out, label.squeeze())
 
-        return loss, label, F.softmax(out, dim=1), rand, packed
+        return loss, label, F.softmax(out, dim=1), img_id, rand, packed
 
     def training_step(self, batch, batch_idx):
         # SAM Optimizer - Second Time Manual Backward
         if self.cfg.train.use_sam:
             opt = self.optimizers()
-            loss_1, _, _, rand, packed = self.step(batch, phase='train')
+            loss_1, _, _, _, rand, packed = self.step(batch, phase='train')
             self.manual_backward(loss_1, opt)
             opt.first_step(zero_grad=True)
 
-            loss_2, _, _, _, _ = self.step(batch, phase='train', rand=rand, packed=packed)
+            loss_2, _, _, _, _, _ = self.step(batch, phase='train', rand=rand, packed=packed)
             self.manual_backward(loss_2, opt)
             opt.second_step(zero_grad=True)
 
@@ -279,14 +292,14 @@ class CassavaLightningSystem(pl.LightningModule):
 
         # Default Optimizer  Once Auto Backward
         else:
-            loss, _, _, _, _ = self.step(batch, phase='train')
+            loss, _, _, _, _, _ = self.step(batch, phase='train')
 
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
-        loss, label, logits, _, _ = self.step(batch, phase='val')
+        loss, label, logits, img_id, _, _ = self.step(batch, phase='val')
 
-        return {'val_loss': loss, 'logits': logits, 'labels': label}
+        return {'val_loss': loss, 'logits': logits, 'labels': label, 'img_id': img_id}
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
@@ -314,6 +327,19 @@ class CassavaLightningSystem(pl.LightningModule):
             if self.experiment is not None:
                 self.experiment.log_model(name=filename, file_or_folder='./'+filename)
                 os.remove(filename)
+
+            # OOF
+            oof = pd.DataFrame(logits.detach().cpu().numpy(), columns=[f'pred_label_{i}' for i in range(5)])
+            oof.insert(0, 'label', labels.detach().cpu().numpy())
+            ids = [x['img_id'] for x in outputs]
+            ids = [list(x) for x in ids]
+            ids = list(itertools.chain.from_iterable(ids))
+
+            oof.insert(0, 'img_id', ids)
+            oof_name = 'oof_' + f'_epoch_{self.epoch_num}' + f'_fold_{self.cfg.train.fold}' + '.csv'
+            oof.to_csv(oof_name, index=False)
+            self.experiment.log_asset(file_data=oof_name, file_name=oof_name)
+            os.remove(oof_name)
 
         # Update Epoch Num
         self.epoch_num += 1
