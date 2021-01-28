@@ -3,6 +3,7 @@ import cv2
 import glob
 import math
 import numpy as np
+import pandas as pd
 import random
 from collections import defaultdict
 import torch
@@ -56,6 +57,28 @@ class CassavaDataset(Dataset):
         label = torch.tensor(label, dtype=torch.long)
 
         return img, label, img_id
+
+
+def drop_noise_label(th=0.5):
+    csv_list = glob.glob(os.path.join('./input/oof', '*.csv'))
+
+    oof = pd.DataFrame()
+
+    # Concatenate 5fold oof
+    for path in csv_list:
+        tmp = pd.read_csv(path)
+        oof = pd.concat([oof, tmp], axis=0)
+
+    # add the highest probability label "pred_label" and Max probability
+    label_cols = sorted([c for c in oof.columns if c.startswith('pred_label')])
+    oof['pred_label'] = np.argmax(oof[label_cols].values, axis=1)
+    oof['max_probability'] = np.max(oof[label_cols].values, axis=1)
+    # get noise
+    tar = oof.query(f"pred_label != label and max_probability > {th}")
+
+    drop_image_id = tar['img_id'].values
+
+    return drop_image_id
 
 
 class CosineAnnealingWarmUpRestarts(_LRScheduler):

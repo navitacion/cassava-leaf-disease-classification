@@ -10,9 +10,10 @@ def get_loss_fn(loss_fn_name, weight=None, smoothing=0.05):
     loss_fn_dict = {
         'crossentropy': nn.CrossEntropyLoss(weight=weight),
         'focalloss': FocalLoss(),
-        'focalcosineloss': FocalCosineLoss(smoothing=smoothing),
+        'focalcosineloss': FocalCosineLoss(weight=weight, smoothing=smoothing),
         'labelsmoothing': MyLabelSmoothingLoss(smoothing=smoothing),
-        'bitemperedloss': BiTemperedLoss(t1=0.5, t2=1.0, smoothing=smoothing)
+        'bitemperedloss': BiTemperedLoss(t1=0.5, t2=1.0, smoothing=smoothing),
+        'focalcosinebitemper': FocalCosineBiTemperLoss(weight=weight, smoothing=smoothing)
     }
 
     return loss_fn_dict[loss_fn_name]
@@ -315,7 +316,8 @@ def bi_tempered_logistic_loss(activations,
                               t2,
                               label_smoothing=0.0,
                               num_iters=5,
-                              reduction = 'mean'):
+                              reduction = 'mean',
+                              p=0.5):
 
     """Bi-Tempered Logistic Loss.
     Args:
@@ -341,7 +343,7 @@ def bi_tempered_logistic_loss(activations,
     else:
         labels_onehot = labels
 
-    if label_smoothing > 0:
+    if label_smoothing > 0 and random.random() > p:
         num_classes = labels_onehot.shape[-1]
         labels_onehot = ( 1 - label_smoothing * num_classes / (num_classes - 1) ) \
                         * labels_onehot + \
@@ -364,13 +366,28 @@ def bi_tempered_logistic_loss(activations,
 
 
 class BiTemperedLoss(nn.Module):
-    def __init__(self, t1, t2, smoothing):
+    def __init__(self, t1, t2, smoothing, p=0.5):
         super(BiTemperedLoss, self).__init__()
         self.t1 = t1
         self.t2 = t2
         self.smoothing = smoothing
+        self.p = p
 
     def forward(self, pred, label):
         # label = F.one_hot(label, num_classes=5).float()
 
-        return bi_tempered_logistic_loss(pred, label, self.t1, self.t2, self.smoothing, num_iters=5)
+        return bi_tempered_logistic_loss(pred, label, self.t1, self.t2, self.smoothing, num_iters=5, p=self.p)
+
+
+class FocalCosineBiTemperLoss(nn.Module):
+    def __init__(self, weight=None, alpha=1, gamma=2, xent=.1, classes=5, smoothing=0.0, p=0.5, t1=0.5, t2=1.0):
+        super(FocalCosineBiTemperLoss, self).__init__()
+        self.focal_loss = FocalCosineLoss(weight, alpha, gamma, xent, classes, smoothing, p)
+        self.bitemperloss = BiTemperedLoss(t1, t2, smoothing, p)
+
+    def forward(self, pred, label):
+        f = self.focal_loss(pred, label)
+        b = self.bitemperloss(pred, label)
+
+        return 0.7 * f + 0.3 * b
+

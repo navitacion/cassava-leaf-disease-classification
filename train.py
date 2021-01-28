@@ -32,7 +32,8 @@ def main(cfg: DictConfig):
 
     # Comet_ml
     experiment = Experiment(api_key=cfg.comet_ml.api_key,
-                            project_name=cfg.comet_ml.project_name)
+                            project_name=cfg.comet_ml.project_name,
+                            auto_param_logging=False)
 
     # Log Parameters
     experiment.log_parameters(dict(cfg.data))

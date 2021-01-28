@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning import metrics
 
-from .utils import CassavaDataset
+from .utils import CassavaDataset, drop_noise_label
 from .utils import StratifiedSampler
 from .cutmix import cutmix, CutMixCriterion, resizemix
 from .mixup import mixup, MixupCriterion
@@ -143,14 +143,9 @@ class CassavaDataModule(pl.LightningDataModule):
 
         if self.drop_noise:
             # 予測結果からかけ離れたものを除外
-            # threshhold = 0.01
-            # probability = pd.read_csv(os.path.join(self.data_dir, 'probability.csv'))
-            # probability = probability[probability['pred'] > threshhold]
-            # use_image_ids = probability['image_id'].values
-            # self.df = self.df[self.df['image_id'].isin(use_image_ids)].reset_index(drop=True)
-
-            # 手動で確認したものを除外
-            self.df = self.df[~self.df['image_id'].isin(drop_images)].reset_index(drop=True)
+            drop_image_id = drop_noise_label(th=self.cfg.data.drop_th)
+            print(f'Drop Noise: {drop_image_id.shape[0]} / {len(self.df)}')
+            self.df = self.df[~self.df['image_id'].isin(drop_image_id.tolist())].reset_index(drop=True)
 
         # 学習高速化のためにデータを1/3に分割
         if self.sample:

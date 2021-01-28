@@ -4,7 +4,7 @@ hydra:
 
 comet_ml:
   api_key: LSTIie51umcysQtnef1Zzil6V
-  project_name: cassava-leaf-disease-classification-2
+  project_name: cassava-leaf-disease-classification
 
 data:
   exp_name: test
@@ -12,11 +12,12 @@ data:
   img_size: 512
   n_splits: 5
   drop_noise: False
+  drop_th: 0.8
   transform: t_7
 
 train:
   lr: 3e-4
-  epoch: 20
+  epoch: 15
   fold: 0
   batch_size: 16
   num_workers: 8
