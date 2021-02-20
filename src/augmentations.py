@@ -2,7 +2,6 @@ import albumentations as albu
 from albumentations.pytorch import ToTensorV2
 from abc import ABCMeta
 
-from .augmix import RandomAugMix
 
 
 def get_transforms(transform_name, img_size):
@@ -14,8 +13,6 @@ def get_transforms(transform_name, img_size):
         't_5': ImageTransform_5(img_size=img_size),
         't_6': ImageTransform_6(img_size=img_size),
         't_7': ImageTransform_7(img_size=img_size),
-        't_8': ImageTransform_8(img_size=img_size),
-        't_9': ImageTransform_9(img_size=img_size),
     }
 
     return _dict[transform_name]
@@ -190,51 +187,6 @@ class ImageTransform_7(BaseTransform):
                 albu.Transpose(p=0.5),
                 albu.CLAHE(p=0.5),
                 albu.MotionBlur(p=0.5),
-                albu.Normalize(mean, std),
-                albu.CoarseDropout(max_height=15, max_width=15, max_holes=8, p=0.5),
-                ToTensorV2(),
-            ], p=1.0),
-
-            'val': albu.Compose([
-                albu.Resize(img_size, img_size),
-                albu.Normalize(mean, std),
-                ToTensorV2(),
-            ], p=1.0)
-        }
-
-
-class ImageTransform_8(BaseTransform):
-    def __init__(self, img_size=224, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        super(ImageTransform_8, self).__init__()
-        self.transform = {
-            'train': albu.Compose([
-                albu.RandomResizedCrop(img_size, img_size),
-                albu.RGBShift(r_shift_limit=40, g_shift_limit=40, b_shift_limit=40, p=0.5),
-                albu.ColorJitter(p=0.5),
-                albu.HorizontalFlip(p=0.5),
-                albu.VerticalFlip(p=0.5),
-                albu.Transpose(p=0.5),
-                albu.MotionBlur(p=0.5),
-                albu.Normalize(mean, std),
-                albu.CoarseDropout(max_height=15, max_width=15, max_holes=8, p=0.5),
-                ToTensorV2(),
-            ], p=1.0),
-
-            'val': albu.Compose([
-                albu.Resize(img_size, img_size),
-                albu.Normalize(mean, std),
-                ToTensorV2(),
-            ], p=1.0)
-        }
-
-
-class ImageTransform_9(BaseTransform):
-    def __init__(self, img_size=224, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
-        super(ImageTransform_9, self).__init__()
-        self.transform = {
-            'train': albu.Compose([
-                albu.RandomResizedCrop(img_size, img_size),
-                RandomAugMix(severity=7, width=7, alpha=5, p=0.95),
                 albu.Normalize(mean, std),
                 albu.CoarseDropout(max_height=15, max_width=15, max_holes=8, p=0.5),
                 ToTensorV2(),

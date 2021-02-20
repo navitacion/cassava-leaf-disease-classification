@@ -1,5 +1,4 @@
 import pandas as pd
-import cv2
 import glob
 from tqdm import tqdm
 import torch

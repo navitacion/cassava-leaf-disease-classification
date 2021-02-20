@@ -5,107 +5,15 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 
 import torch
-from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning import metrics
 
 from .utils import CassavaDataset, drop_noise_label
-from .utils import StratifiedSampler
 from .cutmix import cutmix, CutMixCriterion, resizemix
 from .mixup import mixup, MixupCriterion
-from .snapmix import snapmix, SnapMixLoss
 
-
-# 目視で確認
-drop_images = [
-    '9224019.jpg',
-    '102968016.jpg',
-    '159654644.jpg',
-    '199112616.jpg',
-    '262902341.jpg',
-    '313266547.jpg',
-    '314640668.jpg',
-    '357924077.jpg',
-    '421035788.jpg',
-    '479472063.jpg',
-    '490603548.jpg',
-    '520111872.jpg',
-    '549854027.jpg',
-    '554488826.jpg',
-    '580111608.jpg',
-    '600736721.jpg',
-    '616718743.jpg',
-    '695438825.jpg',
-    '723564013.jpg',
-    '744383303.jpg',
-    '746746526.jpg',
-    '826231979.jpg',
-    '835290707.jpg',
-    '847847826.jpg',
-    '873637313.jpg',
-    '888983519.jpg',
-    '992748624.jpg',
-    '1004389140.jpg',
-    '1008244905.jpg',
-    '1010470173.jpg',
-    '1014492188.jpg',
-    '1119403430.jpg',
-    '1338159402.jpg',
-    '1339403533.jpg',
-    '1357797590.jpg',
-    '1359893940.jpg',
-    '1366430957.jpg',
-    '1403621003.jpg',
-    '1689510013.jpg',
-    '1770746162.jpg',
-    '1773381712.jpg',
-    '1819546557.jpg',
-    '1841279687.jpg',
-    '1848686439.jpg',
-    '1862072615.jpg',
-    '1960041118.jpg',
-    '2074713873.jpg',
-    '2084868828.jpg',
-    '2099754293.jpg',
-    '2161797110.jpg',
-    '2182500020.jpg',
-    '2213446334.jpg',
-    '2229847111.jpg',
-    '2278166989.jpg',
-    '2282957832.jpg',
-    '2321669192.jpg',
-    '2382642453.jpg',
-    '2445684335.jpg',
-    '2482667092.jpg',
-    '2484530081.jpg',
-    '2489013604.jpg',
-    '2604713994.jpg',
-    '2642216511.jpg',
-    '2719114674.jpg',
-    '2839068946.jpg',
-    '3040241097.jpg',
-    '3058561440.jpg',
-    '3126296051.jpg',
-    '3251960666.jpg',
-    '3252232501.jpg',
-    '3421208425.jpg',
-    '3425850136.jpg',
-    '3435954655.jpg',
-    '3477169212.jpg',
-    '3609350672.jpg',
-    '3609986814.jpg',
-    '3652033201.jpg',
-    '3724956866.jpg',
-    '3746679490.jpg',
-    '3838556102.jpg',
-    '3892366593.jpg',
-    '3966432707.jpg',
-    '4060987360.jpg',
-    '4089218356.jpg',
-    '4269208386.jpg',
-]
 
 class CassavaDataModule(pl.LightningDataModule):
     """
@@ -174,7 +82,6 @@ class CassavaDataModule(pl.LightningDataModule):
                               batch_size=self.cfg.train.batch_size,
                               pin_memory=False,
                               num_workers=self.cfg.train.num_workers,
-                              # sampler=StratifiedSampler(self.train_dataset.df['label'].values),
                               shuffle=True)
 
     def val_dataloader(self):
@@ -231,11 +138,10 @@ class CassavaLightningSystem(pl.LightningModule):
             inp, label, img_id = batch
         else:
             inp, label = packed
+            img_id = None
 
-        # Cutmixを徐々にへらす
-        # th = self.current_epoch * 0.1
-        # Cutmixはずっと一定に発生
-        th = 1.0
+        # Cutmix don't use on Last 5 Epoch
+        th = 1.0 if self.cfg.train.epoch - self.current_epoch > 5 else 10000
 
         # Cutmix
         if rand > (th - self.cfg.train.cutmix_pct) and phase == 'train':

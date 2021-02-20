@@ -1,5 +1,4 @@
 import os
-import glob
 import pandas as pd
 import hydra
 from omegaconf import DictConfig
@@ -10,12 +9,11 @@ import torch
 from torch.optim import lr_scheduler
 from timm.optim import RAdam
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.lightning import CassavaLightningSystem, CassavaDataModule
 from src.augmentations import get_transforms
-from src.models import Timm_model, Ensembler
-from src.utils import seed_everything, CosineAnnealingWarmUpRestarts
+from src.models import Timm_model
+from src.utils import seed_everything
 from src.losses import get_loss_fn
 from src.sam import SAM
 
@@ -33,7 +31,8 @@ def main(cfg: DictConfig):
     # Comet_ml
     experiment = Experiment(api_key=cfg.comet_ml.api_key,
                             project_name=cfg.comet_ml.project_name,
-                            auto_param_logging=False)
+                            auto_param_logging=False,
+                            auto_metric_logging=False)
 
     # Log Parameters
     experiment.log_parameters(dict(cfg.data))
@@ -49,9 +48,6 @@ def main(cfg: DictConfig):
 
     # Model  ----------------------------------------------------------------------
     net = Timm_model(cfg.train.model_type, pretrained=True)
-    # models = [cfg.train.model_type, 'vit_base_patch16_384']
-    # weights = [0.6, 0.4]
-    # net = Ensembler(models, weights, pretrained=True)
 
     # Log Model Graph
     experiment.set_model_graph(str(net))
@@ -72,10 +68,7 @@ def main(cfg: DictConfig):
     else:
         optimizer = RAdam(net.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
 
-    if cfg.train.scheduler == 'cosine':
-        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
-    elif cfg.train.scheduler == 'cosine-warmup':
-        scheduler = CosineAnnealingWarmUpRestarts(optimizer, T_0=cfg.train.epoch, T_up=5, eta_max=cfg.train.lr * 10)
+    scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.train.epoch, eta_min=0)
 
     # Lightning Module  -------------------------------------------------------------
     model = CassavaLightningSystem(net, cfg,

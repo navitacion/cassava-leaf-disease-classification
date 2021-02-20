@@ -3,8 +3,8 @@ hydra:
     dir: hydra_output/
 
 comet_ml:
-  api_key: LSTIie51umcysQtnef1Zzil6V
-  project_name: cassava-leaf-disease-classification
+  api_key: <YOUR API KEY>
+  project_name: <YOUR PROJECT NAME>
 
 data:
   exp_name: test
@@ -17,7 +17,7 @@ data:
 
 train:
   lr: 3e-4
-  epoch: 15
+  epoch: 25
   fold: 0
   batch_size: 16
   num_workers: 8
@@ -30,5 +30,5 @@ train:
   mixup_alpha: 0.5
   resizemix_pct: 0.0
   resizemix_alpha: 1.0
-  use_sam: False
-  loss_fn: focalcosineloss
+  use_sam: True
+  loss_fn: crossentropy
