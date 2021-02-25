@@ -43,7 +43,6 @@ def main(cfg: DictConfig):
     cv = StratifiedKFold(n_splits=cfg.data.n_splits, shuffle=True, random_state=cfg.data.seed)
     dm = CassavaDataModule(data_dir, cfg, transform, cv,
                            use_merge=True,
-                           drop_noise=cfg.data.drop_noise,
                            sample=DEBUG)
 
     # Model  ----------------------------------------------------------------------

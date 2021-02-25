@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 from pytorch_lightning import metrics
 
-from .utils import CassavaDataset, drop_noise_label
+from .utils import CassavaDataset
 from .cutmix import cutmix, CutMixCriterion, resizemix
 from .mixup import mixup, MixupCriterion
 
@@ -20,7 +20,7 @@ class CassavaDataModule(pl.LightningDataModule):
     DataModule for Cassava Competition
     """
     def __init__(self, data_dir, cfg, transform, cv,
-                 use_merge=False, drop_noise=False, sample=False):
+                 use_merge=False, sample=False):
         """
         ------------------------------------
         Parameters
@@ -39,7 +39,6 @@ class CassavaDataModule(pl.LightningDataModule):
         self.transform = transform
         self.cv = cv
         self.use_merge = use_merge
-        self.drop_noise = drop_noise
         self.sample = sample
 
     def prepare_data(self):
@@ -48,12 +47,6 @@ class CassavaDataModule(pl.LightningDataModule):
             self.df = pd.read_csv(os.path.join(self.data_dir, 'merged.csv'))
         else:
             self.df = pd.read_csv(os.path.join(self.data_dir, 'train.csv'))
-
-        if self.drop_noise:
-            # 予測結果からかけ離れたものを除外
-            drop_image_id = drop_noise_label(th=self.cfg.data.drop_th)
-            print(f'Drop Noise: {drop_image_id.shape[0]} / {len(self.df)}')
-            self.df = self.df[~self.df['image_id'].isin(drop_image_id.tolist())].reset_index(drop=True)
 
         # 学習高速化のためにデータを1/3に分割
         if self.sample:

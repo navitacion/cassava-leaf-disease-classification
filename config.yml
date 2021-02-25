@@ -3,16 +3,14 @@ hydra:
     dir: hydra_output/
 
 comet_ml:
-  api_key: <YOUR API KEY>
-  project_name: <YOUR PROJECT NAME>
+  api_key: LSTIie51umcysQtnef1Zzil6V
+  project_name: cassava-leaf-disease-classification
 
 data:
   exp_name: test
   seed: 42
   img_size: 512
   n_splits: 5
-  drop_noise: False
-  drop_th: 0.8
   transform: t_7
 
 train:
